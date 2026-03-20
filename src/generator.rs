@@ -2,7 +2,6 @@ use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
 use hashbrown::HashMap;
 
-use crate::TrafficProfile;
 use crate::base::Packet;
 use crate::quantization::{FlowQuantizer, PacketProjection};
 use crate::histograms::{Sequence, Histogram};

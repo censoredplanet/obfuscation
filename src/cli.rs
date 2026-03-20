@@ -23,8 +23,7 @@ pub enum Commands {
     Pipeline(PipelineArgs),
     Generate(GenerateArgs),
     Obfuscation(ObfuscationCli),
-    Histograms(HistogramsCli),
-    Divergence(DivergenceArgs)
+    Histograms(HistogramsCli)
 }
 
 #[derive(Debug, Args)]
@@ -113,23 +112,18 @@ pub enum FlowSource {
 }
 
 #[derive(Debug, serde::Deserialize)]
-pub struct ObfuscatorConfig {
-    pub obfuscator: ObfuscatorSpec,
-    pub tls_mode: TLSMode,
-}
-
-#[derive(Debug, serde::Deserialize)]
 pub struct Model {
     pub markov_order: usize,
     pub quantizer: PathBuf
 }
 
+// TODO: separate ML and model
 #[derive(Debug, serde::Deserialize)]
 pub struct PipelineConfig {
     pub source_a: FlowSource,
     pub source_b: Option<FlowSource>,
     pub strip_tls_handshake: bool,
-    pub obfuscator: Option<ObfuscatorConfig>,
+    pub obfuscator: Option<ObfuscatorSpec>,
     pub model: Model,
     pub train_proportion: u8,
     pub features_packet_horizon: usize,
@@ -166,7 +160,7 @@ pub struct GenerateArgs {
 #[derive(Debug, serde::Deserialize, Clone)]
 #[serde(try_from = "String")]
 pub enum ObfuscatorSpec {
-    Random,
+    Random { tls_mode: TLSMode },
     FromFile(std::path::PathBuf)
 }
 
@@ -174,10 +168,18 @@ impl TryFrom<String> for ObfuscatorSpec {
     type Error = String;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
-        match s.as_str() {
-            "random" => Ok(Self::Random),
-            _ if s.starts_with("file:") => Ok(Self::FromFile(PathBuf::from(&s[5..]))),
-            _ => Err("expected one of: none, random, file:<path>".into()),
+        if let Some(rest) = s.strip_prefix("random:") {
+            let tls_mode = TLSMode::try_from(rest.to_string())?;
+            Ok(Self::Random { tls_mode })
+        } 
+        else if let Some(path) = s.strip_prefix("file:") {
+            if path.is_empty() {
+                return Err("file:<path> requires a non-empty path".into());
+            }
+            Ok(Self::FromFile(PathBuf::from(path)))
+        } 
+        else {
+            Err("expected one of: random:<outer|inner|tls-in-tls>, file:<path>".into())
         }
     }
 }
@@ -221,6 +223,7 @@ pub struct HistogramsCli {
 #[derive(Debug, Subcommand)]
 pub enum HistogramsCommands {
     Display(HistogramsDisplayArgs),
+    Divergence(HistogramsDivergenceArgs),
     Merge(HistogramsMergeArgs)
 }
 
@@ -241,7 +244,7 @@ pub struct HistogramsMergeArgs {
 }
 
 #[derive(Debug, Args)]
-pub struct DivergenceArgs {
+pub struct HistogramsDivergenceArgs {
     #[arg(long)]
     pub baseline: String,
     #[arg(long)]

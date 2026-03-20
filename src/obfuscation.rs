@@ -65,6 +65,7 @@ pub enum TransformRule {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct RuleCondition {
     pub indices: Option<std::ops::Range<usize>>,
+    pub periodic_indices: Option<(usize, usize)>,
     pub c2s_indices: Option<std::ops::Range<usize>>,
     pub s2c_indices: Option<std::ops::Range<usize>>,
     pub ssl_established: Option<bool>,
@@ -74,6 +75,12 @@ impl RuleCondition {
     pub fn matches(&self, packet: &Packet, ctx: &PacketContext) -> bool {
         if let Some(r) = &self.indices {
             if !r.contains(&ctx.index) {
+                return false;
+            }
+        }
+
+        if let Some((remainder, modulus)) = self.periodic_indices {
+            if modulus == 0 || ctx.index % modulus != remainder {
                 return false;
             }
         }
@@ -96,7 +103,6 @@ impl RuleCondition {
             _ => unreachable!(), // direction is always 0 or 1
         }
 
-        // 3. SSL establishment filter
         if let Some(required) = self.ssl_established {
             if ctx.is_handshake_packet != required {
                 return false;
@@ -175,6 +181,7 @@ impl Rule {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ConditionalRule {
     pub condition: RuleCondition,
+    pub probability: f64,
     pub rule: Rule
 }
 
@@ -189,7 +196,7 @@ pub enum DurationPolicy {
 pub enum TLSMode {
     Outer,      // Preserve existing handshake; obfuscate only post-handshake data
     Inner,      // Ignore handshake; treat entire flow as data
-    TLSInTLS,   // Prepend sampled outer handshake; preserve inner TLS; Vision mode
+    TLSInTLS,   // Prepend sampled outer handshake; preserve inner TLS
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -242,10 +249,12 @@ impl Obfuscator {
                 ConditionalRule {
                     condition: RuleCondition {
                         indices: Some(0..1),
+                        periodic_indices: None,
                         c2s_indices: None,
                         s2c_indices: None,
                         ssl_established: None
                     },
+                    probability: 1.0,
                     rule: first_packet_rule
                 }
             ],
@@ -256,9 +265,9 @@ impl Obfuscator {
     }
 
     // TODO: better than O(rules)
-    fn select_rule(&self, packet: &Packet, packet_ctx: &PacketContext) -> &Rule {
+    fn select_rule<R: rand::Rng>(&self, packet: &Packet, packet_ctx: &PacketContext, rng: &mut R) -> &Rule {
         for rule in &self.rules {
-            if rule.condition.matches(packet, packet_ctx) {
+            if rule.condition.matches(packet, packet_ctx) && rng.random::<f64>() < rule.probability {
                 return &rule.rule;
             }
         }
@@ -300,7 +309,7 @@ impl Obfuscator {
                 server_index: server_index
             };
 
-            let (mut emitted, requeue) = self.select_rule(&packet, &packet_ctx)
+            let (mut emitted, requeue) = self.select_rule(&packet, &packet_ctx, &mut rng)
                                         .apply(&packet, &mut rng);
 
             // enforce timestamp monotonicity (if we emitted a dummy packet, its timestamp
@@ -325,6 +334,7 @@ impl Obfuscator {
         obfuscated
     }
 
+    // TODO: take in &mut Flow in future since cloning no longer necessary
     pub fn obfuscate_flow(&self, flow: &Flow) -> Flow {
         let mut obfuscated = flow.clone();
 
@@ -344,7 +354,7 @@ impl Obfuscator {
             (ProtocolMetadata::Raw, _) => {
                 obfuscated.packets = self.obfuscate(&obfuscated.packets, &FlowContext { ssl_est: None });
             },
-            (_, _) => todo!()
+            (_, _) => unreachable!()
         };
 
         obfuscated

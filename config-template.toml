@@ -1,0 +1,16 @@
+obfuscator = "file:${OBFUSCATOR}"
+strip_tls_handshake = ${STRIP_TLS_HANDSHAKES}
+train_proportion = 80
+features_packet_horizon = ${FEATURE_PACKET_HORIZON}
+raw_features = ${RAW_FEATURES}
+
+[source_a.Empirical]
+path = "${FLOW_LOG}"
+flow_filter = "tlsDataPackets >= ${FEATURE_PACKET_HORIZON}"
+
+[source_b.Clone]
+source = "A"
+
+[model]
+markov_order = 0
+quantizer = "${QUANTIZER}"

@@ -216,7 +216,7 @@ pub fn read_and_filter_flows(source: &FlowSource) -> Result<Vec<Flow>, Box<dyn E
                 .filter(|flow| flow_filter.matches(flow))
                 .collect::<Vec<Flow>>())
         },
-        FlowSource::Generated { traffic_profile, quantizer, num_flows, flow_length } => todo!(),
+        FlowSource::Generated { traffic_profile: _, quantizer: _, num_flows: _, flow_length: _ } => todo!(),
         FlowSource::Clone { .. } => unreachable!()
     }
 }
@@ -236,20 +236,24 @@ pub fn materialize_sources(source_a: &FlowSource, source_b: Option<&FlowSource>)
     Ok((flows_a, flows_b))
 }
 
-// TODO: split into ML and regular pipelines
-pub fn run_pipeline(config: PipelineConfig, args: PipelineArgs) -> Result<(), Box<dyn std::error::Error>> {
-    //println!("{:#?}", args);
+fn preprocess(flows: &mut [Flow], strip: bool) -> () {
+    flows.par_iter_mut().for_each(|flow| {
+        if strip {
+            flow.strip_tls_handshake();
+        }
+        flow.rtt_normalize();
+    });
+}
 
-    let now = SystemTime::now();
-
-    let (mut flows, mut flows_b) = materialize_sources(&config.source_a, config.source_b.as_ref())?;
-    println!("Reading {} flows finished at {:#?}s", flows.len(), now.elapsed()?.as_secs());
+fn prepare_flows(config: &PipelineConfig) -> Result<(Vec<Flow>, Option<Vec<Flow>>), Box<dyn std::error::Error>> {
+    let (mut flows_a, mut flows_b) = materialize_sources(&config.source_a, config.source_b.as_ref())?;
 
     let obfuscator = config.obfuscator
+        .as_ref()
         .map(|cfg| {
-            match cfg.obfuscator {
-                ObfuscatorSpec::Random => {
-                    let obfuscator = Obfuscator::random(cfg.tls_mode);
+            match &cfg {
+                ObfuscatorSpec::Random { tls_mode } => {
+                    let obfuscator = Obfuscator::random(tls_mode.clone());
                     println!("{:#?}", obfuscator);
                     Ok::<Obfuscator, Box<dyn std::error::Error>>(obfuscator)
                 }
@@ -263,58 +267,72 @@ pub fn run_pipeline(config: PipelineConfig, args: PipelineArgs) -> Result<(), Bo
 
     if let Some(obfuscator) = obfuscator {
         match flows_b.as_mut() {
-            Some(flows_b) => { *flows_b = obfuscator.obfuscate_flows(flows_b); }
+            Some(b) => { *b = obfuscator.obfuscate_flows(b); }
             None => { flows_a = obfuscator.obfuscate_flows(&flows_a); }
         }
     }
 
-    let preprocess = |flows: &mut [Flow], strip: bool| {
-        flows.par_iter_mut().for_each(|flow| {
-            if strip {
-                flow.strip_tls_handshake();
-            }
-            flow.rtt_normalize();
-        });
-    };
-
     preprocess(&mut flows_a, config.strip_tls_handshake);
-    preprocess(&mut flows_b, config.strip_tls_handshake);
-    
-    println!("Obfuscation finished at {:#?}s", now.elapsed()?.as_secs());
+    if let Some(b) = flows_b.as_mut() {
+        preprocess(b, config.strip_tls_handshake);
+    }
+
+    Ok((flows_a, flows_b))
+}
+
+fn build_model(flows: &[Flow], quantizer: &FlowQuantizer, markov_order: usize) -> TrafficProfile {
+    let quantized = quantizer.quantize_flows(&flows);
+
+    quantized.par_iter()
+        .map(|flow| as_histogram(&flow, &quantizer, markov_order))
+        .reduce(|| TrafficProfile::empty(markov_order),
+            |accumulator, traffic_profile| accumulator.merge(traffic_profile))
+}
+
+fn run_ml_pipeline(
+    flows_a: &[Flow], 
+    flows_b: &[Flow], 
+    config: &PipelineConfig, 
+    train_path: &Path,
+    test_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let labeled_tls = flows_a.iter().map(|f| (f, Label::Tls));
+    let labeled_obfs = flows_b.iter().map(|f| (f, Label::Obfuscated));
+
+    let shuffler = ShuffleBuffer::new(interleave(labeled_tls, labeled_obfs), 100000);
+
+    write_flows_as_feature_vectors(
+        shuffler, 
+        config.features_packet_horizon, 
+        &train_path,
+        &test_path,
+        config.train_proportion)
+}
+
+pub fn run_pipeline(config: PipelineConfig, args: PipelineArgs) -> Result<(), Box<dyn std::error::Error>> {
+    //println!("{:#?}", args);
+
+    let now = SystemTime::now();
+
+    let (flows_a, flows_b) = prepare_flows(&config)?;
+    println!("Preprocessing finished at {}s", now.elapsed()?.as_secs());
 
     if let Some(train_path) = args.train_set && 
         let Some(test_path) = args.test_set &&
         config.raw_features 
     {
-        let labeled_tls = flows_a.iter().map(|f| (f, Label::Tls));
-        let labeled_obfs = flows_b.iter().map(|f| (f, Label::Obfuscated));
-
-        let shuffler = ShuffleBuffer::new(interleave(labeled_tls, labeled_obfs), 100000);
-
-        write_flows_as_feature_vectors(
-            shuffler, 
-            config.features_packet_horizon, 
-            &train_path,
-            &test_path,
-            config.train_proportion)?;
-        println!("Writing features finished at {:#?}s", now.elapsed()?.as_secs());
+        run_ml_pipeline(&flows_a, flows_b.as_ref().unwrap(), &config, &train_path, &test_path)?;
+        println!("Writing features finished at {}s", now.elapsed()?.as_secs());
     }
 
+    let target_flows = flows_b.as_ref().unwrap_or(&flows_a);
+ 
     let quantizer = serde_json::from_slice::<FlowQuantizer>(&std::fs::read(config.model.quantizer)?)?;
+    let histograms = build_model(target_flows, &quantizer, config.model.markov_order);
+    println!("Histograms finished at {}s", now.elapsed()?.as_secs());
+    histograms.write(&args.histograms)?;
 
-    let quantized = quantizer.quantize_flows(&obfuscated);
-    println!("Quantizing finished at {:#?}s", now.elapsed()?.as_secs());
-
-    let h = quantized.par_iter()
-                        .map(|flow| as_histogram(&flow, &quantizer, config.model.markov_order))
-                        .reduce(|| TrafficProfile::empty(config.model.markov_order),
-                            |mut accumulator, traffic_profile| accumulator.merge(traffic_profile));
-    
-    println!("Histograms finished at {:#?}s", now.elapsed()?.as_secs());
-
-    h.write(&args.histograms)?;
-
-    println!("Done at {:#?}s", now.elapsed()?.as_secs());
+    println!("Done at {}s", now.elapsed()?.as_secs());
 
     Ok(())
 }
@@ -340,13 +358,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     })?;
                     println!("Reading {} flows finished at {:#?}s", flows.len(), now.elapsed()?.as_secs());
 
-                    flows.par_iter_mut()
-                        .for_each(|flow| {
-                            if args.strip_tls_handshake {
-                                flow.strip_tls_handshake();
-                            }
-                            flow.rtt_normalize();
-                        });
+                    preprocess(&mut flows, args.strip_tls_handshake);
 
                     let mut traffic_stats = TrafficStats::default();
                     for flow in flows.iter() {
@@ -371,7 +383,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         },
         Commands::Pipeline(args) => {
-            let content = std::fs::read_to_string("config.toml")?;
+            let content = std::fs::read_to_string(&args.config)?;
             let config: PipelineConfig = toml::from_str(&content)?;
             println!("{:#?}", config);
             run_pipeline(config, args)?
@@ -390,7 +402,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 })
                 .collect::<Vec<_>>();
             
-            let mut generator = Generator::new(&samplers, quantizer, traffic_profile.markov_order, args.length, rand::rng());
+            let generator = Generator::new(&samplers, quantizer, traffic_profile.markov_order, args.length, rand::rng());
             for packet in generator {
                 println!("{:#?}", packet);
             }
@@ -409,19 +421,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let histograms = Vec::<Histogram<PacketProjection>>::from_file(Path::new(&args.input))?;
                     println!("{}", histograms[args.index]);
                 }
+                HistogramsCommands::Divergence(args) => {
+                    let baseline = TrafficProfile::from_file(Path::new(&args.baseline))?;
+                    let other = TrafficProfile::from_file(Path::new(&args.other))?;
+
+                    let divergence = baseline.kl_divergence(&other);
+                    println!("{:#?}", divergence);
+                }
                 HistogramsCommands::Merge(args) => {
                     let traffic_profile = merge_from_directory::<TrafficProfile>(&args.input)?;
                     traffic_profile.write(&args.output)?;
                 }
             }
         },
-        Commands::Divergence(args) => {
-            let baseline = TrafficProfile::from_file(Path::new(&args.baseline))?;
-            let other = TrafficProfile::from_file(Path::new(&args.other))?;
-
-            let divergence = baseline.divergence(&other);
-            println!("{:#?}", divergence);
-        }
     }
 
     Ok(())

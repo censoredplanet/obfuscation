@@ -53,7 +53,7 @@ impl FeatureKind {
 pub trait EmitFeatures {
     type Value;
 
-    fn id(&self) -> &Vec<u8>; // move this later
+    fn id(&self) -> &Vec<u8>;
     fn emit_features(&self, num_packets: usize, emitter: &mut dyn FeatureEmitter<Self::Value>);
 }
 

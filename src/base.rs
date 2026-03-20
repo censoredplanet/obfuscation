@@ -59,10 +59,17 @@ impl Flow {
     pub fn rtt_normalize(&mut self) {
         let client_to_observer = (self.base.ack_ts - self.base.synack_ts) / 2.0;
         let rtt = (self.base.synack_ts - self.base.syn_ts) + (2.0 * client_to_observer);
-        let first_data_packet_ts = self.packets[0].timestamp;
 
+        let mut prev_ts: Option<f64> = None;
         for packet in self.packets.iter_mut() {
-            packet.timestamp = (packet.timestamp - first_data_packet_ts) / rtt;
+            let iat = match prev_ts {
+                None => 0.0,
+                Some(ts) => packet.timestamp - ts,
+            };
+
+            prev_ts = Some(packet.timestamp);
+
+            packet.timestamp = iat / rtt;
         }
     }
 

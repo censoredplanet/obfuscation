@@ -1,6 +1,13 @@
-//use crate::merge::*;
+use std::marker::PhantomData;
+
+use crate::merge::*;
 use crate::quantization::PacketProjection;
 use crate::histograms::{Histogram, merge_histogram_vecs};
+
+#[derive(Debug)]
+pub struct Baseline;
+#[derive(Debug)]
+pub struct Comparison;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct TrafficProfile {
@@ -15,12 +22,13 @@ impl TrafficProfile {
             markov_order
         }
     }
-    // TODO: confirm w/ Josh
-    pub fn divergence(&self, other: &TrafficProfile) -> Divergence {
-        let mut kl = Vec::with_capacity(self.profile.len());
 
-        for (i, (p, q)) in std::iter::zip(&self.profile, &other.profile).enumerate() {
-            if i < self.markov_order {
+    // TODO: confirm w/ Josh
+    fn kl(baseline: &TrafficProfile, other: &TrafficProfile) -> Vec<f64> {
+        let mut kl = Vec::with_capacity(baseline.profile.len());
+
+        for (i, (p, q)) in std::iter::zip(&baseline.profile, &other.profile).enumerate() {
+            if i < baseline.markov_order {
                 kl.push(p.kl_divergence(q));
             }
             else {
@@ -31,9 +39,26 @@ impl TrafficProfile {
             }
         }
 
-        Divergence {
-            vector: kl.into_boxed_slice(),
-            markov_order: self.markov_order
+        kl
+    }
+    
+    pub fn kl_divergence(&self, other: &TrafficProfile) -> KLDivergence<Baseline, Comparison> {
+        KLDivergence {
+            divergence: Divergence {
+                vector: Self::kl(self, other).into_boxed_slice(),
+                markov_order: self.markov_order
+            },
+            _marker: PhantomData
+        }
+    }
+
+    pub fn reverse_kl_divergence(&self, other: &TrafficProfile) -> KLDivergence<Comparison, Baseline> {
+        KLDivergence {
+            divergence: Divergence {
+                vector: Self::kl(other, self).into_boxed_slice(),
+                markov_order: self.markov_order
+            },
+            _marker: PhantomData
         }
     }
 }
@@ -65,7 +90,50 @@ impl Divergence {
             .unwrap()
     }
 
+    pub fn sum_until(&self, i: usize) -> f64 {
+        assert!(i < self.vector.len(), "Index {} out of bounds!", i);
+
+        if i < self.markov_order {
+            self.vector[i]
+        }
+        else {
+            self.vector[self.markov_order..=i].iter().sum()
+        }
+    }
+
     pub fn sum(&self) -> f64 {
-        self.vector.iter().sum()
+        self.sum_until(self.vector.len() - 1)
+    }
+}
+
+#[derive(Debug)]
+pub struct KLDivergence<P, Q> {
+    divergence: Divergence,
+    _marker: PhantomData<(P, Q)>,
+}
+
+// TODO: refactor common logic into helper function
+impl KLDivergence<Baseline, Comparison> {
+    pub fn pinsker(&self) -> Box<[f64]> {
+        (0..self.divergence.vector.len())
+            .map(|i| (0.5 * self.divergence.sum_until(i)).sqrt())
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    }
+
+    pub fn bretagnolle_huber(&self) -> Box<[f64]> {
+        (0..self.divergence.vector.len())
+            .map(|i| (1.0 - (-self.divergence.sum_until(i)).exp()).sqrt())
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    }
+}
+
+impl KLDivergence<Comparison, Baseline> {
+    pub fn sanovs_theorem(&self, n: usize) -> Box<[f64]> {
+        (0..self.divergence.vector.len())
+            .map(|i| (-(n as f64) * self.divergence.sum_until(i)).exp())
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
     }
 }
