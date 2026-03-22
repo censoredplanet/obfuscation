@@ -246,9 +246,9 @@ pub struct HistogramsMergeArgs {
 #[derive(Debug, Args)]
 pub struct HistogramsDivergenceArgs {
     #[arg(long)]
-    pub baseline: String,
+    pub left: String,
     #[arg(long)]
-    pub other: String
+    pub right: String
 }
 
 // ===============

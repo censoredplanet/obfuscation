@@ -172,7 +172,6 @@ pub fn bin(traffic_stats: TrafficStats, markov_order: u32, epsilon: f64, delta: 
             let feature_quantizer = match feature.feature() {
                 FeatureKind::Direction => FeatureQuantizer::identity(feature),
                 FeatureKind::Entropy => FeatureQuantizer::mask(feature),
-                // For i = 0, timestamp is always 0 by definition, so just mask it
                 _ => FeatureQuantizer::uniform_bounded(feature, num_bins)
             };
             println!("\t{:#?}) nbins: {} | bin_width: {} | lower: {} | upper: {}", 

@@ -109,8 +109,8 @@ pub fn as_histogram(flow: &QuantizedFlow, quantizer: &FlowQuantizer, order: usiz
 }
 
 // for features with massive or infinite domains, instead of discretizing the entire
-// domain, we can instead truncate the domain to the maximum observed value, and then
-// use a single bin for the open interval (max, inf)
+// domain, we can instead truncate the domain to the minimum/maximum observed values, 
+// and then assign any out-of-bounds values to the first/last bins
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct BoundedFeature {
     feature: FeatureKind,

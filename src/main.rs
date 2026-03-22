@@ -422,10 +422,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     println!("{}", histograms[args.index]);
                 }
                 HistogramsCommands::Divergence(args) => {
-                    let baseline = TrafficProfile::from_file(Path::new(&args.baseline))?;
-                    let other = TrafficProfile::from_file(Path::new(&args.other))?;
+                    let left = TrafficProfile::from_file(Path::new(&args.left))?;
+                    let right = TrafficProfile::from_file(Path::new(&args.right))?;
 
-                    let divergence = baseline.kl_divergence(&other);
+                    let divergence = left.kl_divergence(&right);
                     println!("{:#?}", divergence);
                 }
                 HistogramsCommands::Merge(args) => {
