@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use serde::{Serialize, Deserialize};
 
 use crate::base::MSS;
@@ -8,6 +10,20 @@ pub enum FeatureKind {
     Direction,
     Size,
     Entropy,
+}
+
+impl FromStr for FeatureKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "timestamp" => Ok(Self::Timestamp),
+            "direction" => Ok(Self::Direction),
+            "size" => Ok(Self::Size),
+            "entropy" => Ok(Self::Entropy),
+            _ => Err(format!("invalid feature: {}", s)),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

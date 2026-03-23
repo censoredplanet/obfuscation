@@ -378,7 +378,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let flow_quantizer = FlowQuantizer::PerPacket(
                         bin(traffic_stats, args.markov_order, args.epsilon, args.delta));
                     write_json(flow_quantizer, &args.output)?;
+                },
+                StatsCommand::Display(args) => {
+                    let traffic_stats = TrafficStats::from_file(Path::new(&args.input))?;
+                    
+                    let mut view = traffic_stats.view();
+                    
+                    if let Some(feature) = args.feature {
+                        view = view.feature(feature);
+                    }
+                    if let Some(index) = args.index {
+                        view = view.index(index);
+                    }
 
+                    println!("{}", view);
                 }
             }
         },
@@ -425,8 +438,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let left = TrafficProfile::from_file(Path::new(&args.left))?;
                     let right = TrafficProfile::from_file(Path::new(&args.right))?;
 
-                    let divergence = left.kl_divergence(&right);
-                    println!("{:#?}", divergence);
+                    let kl_divergence = left.kl_divergence(&right);
+                    let reverse_kl_divergence = left.reverse_kl_divergence(&right);
+
+                    println!("Cumulative Sum: {:#?}", kl_divergence.cumulative_sum());
+                    println!("Bayes Error (Lower Bound): {:#?}", kl_divergence.bayes_error_lower_bound());
+
+                    println!("Chernoff-Stein: {:#?}", kl_divergence.chernoff_stein_lemma(1000));
+                    println!("Sanov: {:#?}", reverse_kl_divergence.sanovs_theorem(1000));
                 }
                 HistogramsCommands::Merge(args) => {
                     let traffic_profile = merge_from_directory::<TrafficProfile>(&args.input)?;

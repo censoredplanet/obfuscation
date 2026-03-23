@@ -6,6 +6,7 @@ use winnow::token::literal;
 use winnow::combinator::{seq};
 use winnow::ascii::{space0, digit1};
 
+use crate::feature::FeatureKind;
 use crate::base::FlowFilterPredicate;
 use crate::obfuscation::TLSMode;
 
@@ -48,8 +49,8 @@ pub struct StatsCli {
 pub enum StatsCommand {
     Compute(StatsComputeArgs),
     Merge(StatsMergeArgs),
-    Bin(StatsBinArgs)
-    // TODO: Display
+    Bin(StatsBinArgs),
+    Display(StatsDisplayArgs)
 }
 
 #[derive(Debug, Args)]
@@ -94,6 +95,16 @@ pub struct StatsBinArgs {
     pub delta: f64
 }
 
+#[derive(Debug, Args)]
+pub struct StatsDisplayArgs {
+    #[arg(long)]
+    pub input: PathBuf,
+    #[arg(long)]
+    pub feature: Option<FeatureKind>,
+    #[arg(long)]
+    pub index: Option<usize>
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub enum FlowSource {
     Empirical {
@@ -117,7 +128,7 @@ pub struct Model {
     pub quantizer: PathBuf
 }
 
-// TODO: separate ML and model
+// TODO: separate ML and KL model
 #[derive(Debug, serde::Deserialize)]
 pub struct PipelineConfig {
     pub source_a: FlowSource,

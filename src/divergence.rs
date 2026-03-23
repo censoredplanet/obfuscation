@@ -103,6 +103,13 @@ impl Divergence {
     pub fn sum(&self) -> f64 {
         self.sum_until(self.vector.len() - 1)
     }
+
+    pub fn cumulative_sum(&self) -> Box<[f64]> {
+        (0..self.vector.len())
+            .map(|i| self.sum_until(i))
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    }
 }
 
 #[derive(Debug)]
@@ -111,28 +118,52 @@ pub struct KLDivergence<P, Q> {
     _marker: PhantomData<(P, Q)>,
 }
 
-// TODO: refactor common logic into helper function
-impl KLDivergence<Left, Right> {
-    pub fn pinsker(&self) -> Box<[f64]> {
-        (0..self.divergence.vector.len())
-            .map(|i| (0.5 * self.divergence.sum_until(i)).sqrt())
-            .collect::<Vec<_>>()
-            .into_boxed_slice()
-    }
-
-    pub fn bretagnolle_huber(&self) -> Box<[f64]> {
-        (0..self.divergence.vector.len())
-            .map(|i| (1.0 - (-self.divergence.sum_until(i)).exp()).sqrt())
+impl<P, Q> KLDivergence<P, Q> {
+    fn error_decay(&self, n: usize) -> Box<[f64]> {
+        self.divergence.cumulative_sum()
+            .into_iter()
+            .map(|v| (-(n as f64) * v).exp())
             .collect::<Vec<_>>()
             .into_boxed_slice()
     }
 }
 
-impl KLDivergence<Right, Left> {
-    pub fn sanovs_theorem(&self, n: usize) -> Box<[f64]> {
-        (0..self.divergence.vector.len())
-            .map(|i| (-(n as f64) * self.divergence.sum_until(i)).exp())
+// TODO: refactor common logic into helper function
+impl KLDivergence<Left, Right> {
+    pub fn cumulative_sum(&self) -> Box<[f64]> {
+        self.divergence.cumulative_sum()
+    }
+    
+    pub fn pinsker(&self) -> Box<[f64]> {
+        self.divergence.cumulative_sum()
+            .into_iter()
+            .map(|v| (v / 2.0).sqrt())
             .collect::<Vec<_>>()
             .into_boxed_slice()
+    }
+
+    pub fn bretagnolle_huber(&self) -> Box<[f64]> {
+        self.divergence.cumulative_sum()
+            .into_iter()
+            .map(|v| (1.0 - (-v).exp()).sqrt())
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    }
+
+    pub fn bayes_error_lower_bound(&self) -> Box<[f64]> {
+        std::iter::zip(self.pinsker(), self.bretagnolle_huber())
+            .map(|(a, b)| (1.0 - a.min(b)) / 2.0)
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    }
+
+    pub fn chernoff_stein_lemma(&self, n: usize) -> Box<[f64]> {
+        self.error_decay(n)
+    }
+}
+
+impl KLDivergence<Right, Left> {
+    pub fn sanovs_theorem(&self, n: usize) -> Box<[f64]> {
+        self.error_decay(n)
     }
 }

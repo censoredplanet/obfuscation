@@ -1,3 +1,5 @@
+use std::fmt;
+
 use hashbrown::HashMap;
 use tdigest::TDigest;
 
@@ -61,6 +63,20 @@ impl Default for FeatureStats {
     }
 }
 
+impl fmt::Display for FeatureStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Count: {}", self.count)?;
+        writeln!(f, "Mean: {}", self.mean)?;
+        writeln!(f, "Min: {}", self.min)?;
+        writeln!(f, "Max: {}", self.max)?;
+        writeln!(f, "Q1: {}", self.tdigest.estimate_quantile(0.25))?;
+        writeln!(f, "Median: {}", self.tdigest.estimate_quantile(0.5))?;
+        writeln!(f, "Q3: {}", self.tdigest.estimate_quantile(0.75))?;
+
+        Ok(())
+    }
+}
+
 impl Merge for FeatureStats {
     fn merge_in_place(&mut self, other: &FeatureStats) {
         let n1 = self.count as f64;
@@ -85,6 +101,13 @@ pub struct TrafficStats {
     pub stats: HashMap<FeatureKind, Vec<FeatureStats>> 
 }
 
+#[derive(Debug)]
+pub struct TrafficStatsView<'a> {
+    stats: &'a TrafficStats,
+    feature: Option<FeatureKind>,
+    index: Option<usize>,
+}
+
 impl TrafficStats {
     pub fn update(&mut self, flow: &Flow) {
         for (i, packet) in flow.packets.iter().enumerate() {
@@ -95,6 +118,14 @@ impl TrafficStats {
                 }
                 vec[i].update(packet.get_feature(&feature));
             }
+        }
+    }
+
+    pub fn view(&self) -> TrafficStatsView<'_> {
+        TrafficStatsView {
+            stats: self,
+            feature: None,
+            index: None,
         }
     }
 }
@@ -117,6 +148,51 @@ impl Merge for TrafficStats {
                 stats[i].merge_in_place(other_stat);
             }
         }
+    }
+}
+
+impl<'a> TrafficStatsView<'a> {
+    pub fn feature(mut self, feature: FeatureKind) -> Self {
+        self.feature = Some(feature);
+        self
+    }
+
+    pub fn index(mut self, index: usize) -> Self {
+        self.index = Some(index);
+        self
+    }
+}
+
+impl fmt::Display for TrafficStatsView<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let len = self.stats.stats.values()
+            .next()
+            .map(|v| v.len())
+            .unwrap_or(0);
+
+        let mut first = true;
+        for i in 0..len {
+            if let Some(idx) = self.index {
+                if i != idx { continue; }
+            }
+
+            if !first {
+                writeln!(f)?;
+            }
+            first = false;
+
+            writeln!(f, "=== Index {} ===", i)?;
+
+            for (feature, stats) in &self.stats.stats {
+                if let Some(feature_filter) = &self.feature {
+                    if *feature != *feature_filter { continue; }
+                }
+
+                write!(f, "\n{:?}:\n===\n{}", feature, stats[i])?;
+            }
+        }
+
+        Ok(())
     }
 }
 
