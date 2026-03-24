@@ -51,18 +51,18 @@ impl<K> Histogram<K>
 where
     K: serde::Serialize + Eq + std::hash::Hash + Clone,
 {
-    pub fn new(alphabet_size: usize, sequence_len: usize) -> Self {
+    pub fn new(alphabet_size: usize, sequence_len: usize, pseudocount: f64) -> Self {
         Self { 
             counts: HashMap::new(),
             total: 0,
-            alpha: 1.0,
+            alpha: pseudocount,
             alphabet_size: alphabet_size,
             sequence_len: sequence_len
         }
     }
 
     pub fn empty_like(&self) -> Self {
-        Histogram::new(self.alphabet_size, self.sequence_len)
+        Histogram::new(self.alphabet_size, self.sequence_len, self.alpha)
     }
 
     fn increment_by(&mut self, key: Sequence<K>, amount: usize) -> () {
@@ -89,13 +89,13 @@ where
 
     pub fn smoothed_probability(&self, x: &Sequence<K>) -> f64 {
         let count = *self.counts.get(x).unwrap_or(&0);
-        (count as f64 + self.alpha) / (self.total as f64 + self.domain_size() as f64)
+        (count as f64 + self.alpha) / (self.total as f64 + self.alpha * self.domain_size() as f64)
     }
 
     pub fn prefix_histogram(&self) -> Self {
         assert!(self.sequence_len != 0, "Cannot take prefix of empty sequences");
 
-        let mut histogram = Histogram::new(self.alphabet_size, self.sequence_len - 1);
+        let mut histogram = Histogram::new(self.alphabet_size, self.sequence_len - 1, self.alpha);
         for (key, count) in self.counts.iter() {
             histogram.increment_by(key.prefix(), *count);
         }
@@ -113,7 +113,7 @@ where
 
             let histogram = conditionals
                 .entry(prefix)
-                .or_insert_with(|| Histogram::new(self.alphabet_size, 1));
+                .or_insert_with(|| Histogram::new(self.alphabet_size, 1, self.alpha));
             
             *histogram.counts.entry(last).or_insert(0) += count;
             histogram.total += count;

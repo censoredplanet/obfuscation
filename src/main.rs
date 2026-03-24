@@ -9,6 +9,7 @@ use rand::Rng;
 use hashbrown::HashMap;
 use foldhash::fast::RandomState;
 use itertools::interleave;
+use enumflags2::BitFlags;
 
 use crate::cli::*;
 use crate::merge::*;
@@ -280,11 +281,11 @@ fn prepare_flows(config: &PipelineConfig) -> Result<(Vec<Flow>, Option<Vec<Flow>
     Ok((flows_a, flows_b))
 }
 
-fn build_model(flows: &[Flow], quantizer: &FlowQuantizer, markov_order: usize) -> TrafficProfile {
+fn build_model(flows: &[Flow], quantizer: &FlowQuantizer, markov_order: usize, alpha: f64) -> TrafficProfile {
     let quantized = quantizer.quantize_flows(&flows);
 
     quantized.par_iter()
-        .map(|flow| as_histogram(&flow, &quantizer, markov_order))
+        .map(|flow| as_histogram(&flow, &quantizer, markov_order, alpha))
         .reduce(|| TrafficProfile::empty(markov_order),
             |accumulator, traffic_profile| accumulator.merge(traffic_profile))
 }
@@ -328,7 +329,7 @@ pub fn run_pipeline(config: PipelineConfig, args: PipelineArgs) -> Result<(), Bo
     let target_flows = flows_b.as_ref().unwrap_or(&flows_a);
  
     let quantizer = serde_json::from_slice::<FlowQuantizer>(&std::fs::read(config.model.quantizer)?)?;
-    let histograms = build_model(target_flows, &quantizer, config.model.markov_order);
+    let histograms = build_model(target_flows, &quantizer, config.model.markov_order, config.model.pseudocount);
     println!("Histograms finished at {}s", now.elapsed()?.as_secs());
     histograms.write(&args.histograms)?;
 
@@ -375,8 +376,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
                 StatsCommand::Bin(args) => {
                     let traffic_stats = TrafficStats::from_file(Path::new(&args.input))?;
+
+                    let mut feature_mask = BitFlags::<FeatureKind>::all();
+                    args.mask.iter().flatten().for_each(|&f| feature_mask.remove(f));
+
                     let flow_quantizer = FlowQuantizer::PerPacket(
-                        bin(traffic_stats, args.markov_order, args.epsilon, args.delta));
+                        bin(traffic_stats, feature_mask, args.markov_order, args.epsilon, args.delta));
                     write_json(flow_quantizer, &args.output)?;
                 },
                 StatsCommand::Display(args) => {

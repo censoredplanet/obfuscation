@@ -92,7 +92,9 @@ pub struct StatsBinArgs {
     #[arg(long, default_value_t = 0.05)]
     pub epsilon: f64,
     #[arg(long, default_value_t = 0.05)]
-    pub delta: f64
+    pub delta: f64,
+    #[arg(long)]
+    pub mask: Option<Vec<FeatureKind>>
 }
 
 #[derive(Debug, Args)]
@@ -122,10 +124,14 @@ pub enum FlowSource {
     }
 }
 
+fn default_pseudocount() -> f64 { 1.0 }
+
 #[derive(Debug, serde::Deserialize)]
 pub struct Model {
     pub markov_order: usize,
-    pub quantizer: PathBuf
+    pub quantizer: PathBuf,
+    #[serde(default = "default_pseudocount")]
+    pub pseudocount: f64
 }
 
 // TODO: separate ML and KL model
@@ -304,3 +310,15 @@ fn tls_data_packets_comp(input: &mut &str) -> winnow::Result<FlowFilterPredicate
 
     Ok(FlowFilterPredicate::MinTLSDataPackets(n.parse::<usize>().unwrap()))
 }
+
+// fn tls_version_comp(input: &mut &str) -> winnow::Result<FlowFilterPredicate> {
+//     let (n,) = seq!(
+//         _: literal("tlsVersion"),
+//         _: space0,
+//         _: literal("=="),
+//         _: space0,
+//         digit1,
+//     ).parse_next(input)?;
+
+//     Ok(FlowFilterPredicate::TLSVersionEq(TLSv12))
+// }

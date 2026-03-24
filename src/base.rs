@@ -28,6 +28,22 @@ impl Packet {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum TLSVersion {
+    TLSv12,
+    TLSv13
+}
+
+impl From<&[u8]> for TLSVersion {
+    fn from(bytes: &[u8]) -> Self {
+        match bytes {
+            b"TLSv12" => TLSVersion::TLSv12,
+            b"TLSv13" => TLSVersion::TLSv13,
+            _ => unreachable!(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FlowMetadata {
     pub conn_id: Vec<u8>,
@@ -40,7 +56,7 @@ pub struct FlowMetadata {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ProtocolMetadata {
     TLSMetadata {
-        version: Vec<u8>,
+        version: TLSVersion,
         client_hello: usize,
         server_hello: usize,
         ssl_est: usize
@@ -103,7 +119,8 @@ impl PostcardIO for Vec<Flow> {}
 #[serde(try_from = "String")]
 pub enum FlowFilterPredicate {
     None,
-    MinTLSDataPackets(usize)
+    MinTLSDataPackets(usize),
+    TLSVersionEq(TLSVersion),
 }
 
 impl FlowFilterPredicate {
@@ -120,6 +137,12 @@ impl FlowFilterPredicate {
                 };
 
                 tls_data_packets >= *n
+            },
+            FlowFilterPredicate::TLSVersionEq(tls_version) => {
+                match &flow.proto {
+                    ProtocolMetadata::Raw => false,
+                    ProtocolMetadata::TLSMetadata { version, .. } => version == tls_version
+                }
             }
         }
     }
@@ -171,7 +194,7 @@ pub fn read_flows(flows_csv_path: &str, packets_csv_path: &str) -> Result<Vec<Fl
                     len: flow_length
                 },
                 proto: ProtocolMetadata::TLSMetadata {
-                    version: raw_record.get(4).unwrap().to_vec(),
+                    version: raw_record.get(4).unwrap().into(),
                     client_hello: atoi::atoi(raw_record.get(5).unwrap()).unwrap(),
                     server_hello: atoi::atoi(raw_record.get(6).unwrap()).unwrap(),
                     ssl_est: atoi::atoi(raw_record.get(7).unwrap()).unwrap()

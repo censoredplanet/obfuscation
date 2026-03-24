@@ -2,10 +2,11 @@ use std::fmt;
 
 use hashbrown::HashMap;
 use tdigest::TDigest;
+use enumflags2::BitFlags;
 
 use crate::merge::{Merge, PostcardIO};
 use crate::base::Flow;
-use crate::feature::FeatureKind;
+use crate::feature::{FeatureKind};
 use crate::quantization::{BoundedFeature, FeatureQuantizer, PacketQuantizer};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
@@ -67,6 +68,7 @@ impl fmt::Display for FeatureStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Count: {}", self.count)?;
         writeln!(f, "Mean: {}", self.mean)?;
+        writeln!(f, "Variance: {}", self.variance())?;
         writeln!(f, "Min: {}", self.min)?;
         writeln!(f, "Max: {}", self.max)?;
         writeln!(f, "Q1: {}", self.tdigest.estimate_quantile(0.25))?;
@@ -196,7 +198,7 @@ impl fmt::Display for TrafficStatsView<'_> {
     }
 }
 
-pub fn bin(traffic_stats: TrafficStats, markov_order: u32, epsilon: f64, delta: f64) -> Vec<PacketQuantizer> {
+pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, markov_order: u32, epsilon: f64, delta: f64) -> Vec<PacketQuantizer> {
     let max_len = traffic_stats
         .stats
         .values()
@@ -211,7 +213,7 @@ pub fn bin(traffic_stats: TrafficStats, markov_order: u32, epsilon: f64, delta: 
         let mut packet_quantizer = PacketQuantizer::default();
         let mut n = 0;
 
-        for feature in FeatureKind::iter() {
+        for feature in feature_mask.iter() {
             if let Some(stats) = traffic_stats.stats
                 .get(&feature)
                 .and_then(|v| v.get(i))

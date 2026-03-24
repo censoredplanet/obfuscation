@@ -1,10 +1,13 @@
 use std::str::FromStr;
 
 use serde::{Serialize, Deserialize};
+use enumflags2::{bitflags};
 
 use crate::base::MSS;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
+#[bitflags]
+#[repr(u8)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum FeatureKind {
     Timestamp,
     Direction,
