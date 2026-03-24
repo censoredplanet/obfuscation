@@ -75,15 +75,15 @@ impl QuantizedPacketSequence {
     }
 }
 
-pub fn as_histogram(flow: &QuantizedFlow, quantizer: &FlowQuantizer, order: usize, pseudocount: f64) -> TrafficProfile {
+pub fn as_histogram(flow: &QuantizedFlow, quantizer: &FlowQuantizer, order: u32, pseudocount: f64) -> TrafficProfile {
     let num_packets = flow.quantized.packets.len();
     let mut histograms = Vec::with_capacity(num_packets);
 
     for i in 0..flow.quantized.packets.len() {
-        let start = i.saturating_sub(order);
+        let start = i.saturating_sub(order as usize);
 
         let alphabet_size = quantizer.quantizer_at(i).num_outcomes();
-        let sequence_len = std::cmp::min(order, i) + 1;
+        let sequence_len = std::cmp::min(order as usize, i) + 1;
         let mut histogram = Histogram::new(alphabet_size, sequence_len, pseudocount);
 
         let seq = match quantizer {

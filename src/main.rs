@@ -36,6 +36,12 @@ pub mod divergence;
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct ModelAssumptions {
+    pub markov_order: u32,
+    pub quantizer: FlowQuantizer,
+}
+
 pub fn write_json<'a, T>(
     object: T,
     path: &Path,
@@ -281,7 +287,7 @@ fn prepare_flows(config: &PipelineConfig) -> Result<(Vec<Flow>, Option<Vec<Flow>
     Ok((flows_a, flows_b))
 }
 
-fn build_model(flows: &[Flow], quantizer: &FlowQuantizer, markov_order: usize, alpha: f64) -> TrafficProfile {
+fn build_model(flows: &[Flow], quantizer: &FlowQuantizer, markov_order: u32, alpha: f64) -> TrafficProfile {
     let quantized = quantizer.quantize_flows(&flows);
 
     quantized.par_iter()
@@ -328,8 +334,8 @@ pub fn run_pipeline(config: PipelineConfig, args: PipelineArgs) -> Result<(), Bo
 
     let target_flows = flows_b.as_ref().unwrap_or(&flows_a);
  
-    let quantizer = serde_json::from_slice::<FlowQuantizer>(&std::fs::read(config.model.quantizer)?)?;
-    let histograms = build_model(target_flows, &quantizer, config.model.markov_order, config.model.pseudocount);
+    let model_assumptions = serde_json::from_slice::<ModelAssumptions>(&std::fs::read(config.model.model_assumptions)?)?;
+    let histograms = build_model(target_flows, &model_assumptions.quantizer, model_assumptions.markov_order, config.model.pseudocount);
     println!("Histograms finished at {}s", now.elapsed()?.as_secs());
     histograms.write(&args.histograms)?;
 
@@ -378,11 +384,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let traffic_stats = TrafficStats::from_file(Path::new(&args.input))?;
 
                     let mut feature_mask = BitFlags::<FeatureKind>::all();
+                    feature_mask.remove(FeatureKind::Entropy);
                     args.mask.iter().flatten().for_each(|&f| feature_mask.remove(f));
 
-                    let flow_quantizer = FlowQuantizer::PerPacket(
-                        bin(traffic_stats, feature_mask, args.markov_order, args.epsilon, args.delta));
-                    write_json(flow_quantizer, &args.output)?;
+                    let model_assumptions = ModelAssumptions {
+                        markov_order: args.markov_order,
+                        quantizer: FlowQuantizer::PerPacket(bin(traffic_stats, feature_mask, args.markov_order, args.epsilon, args.delta))
+                    };
+
+                    write_json(model_assumptions, &args.output)?;
                 },
                 StatsCommand::Display(args) => {
                     let traffic_stats = TrafficStats::from_file(Path::new(&args.input))?;

@@ -48,7 +48,7 @@ pub trait PacketSource {
 pub struct Generator<'a, R: rand::Rng> {
     model: &'a [HashMap<Sequence<PacketProjection>, WeightedSampler<PacketProjection>>],
     quantizer: FlowQuantizer,
-    markov_order: usize,
+    markov_order: u32,
     history: Vec<Packet>,
     emitted: usize,
     length: usize,
@@ -60,7 +60,7 @@ impl<'a, R: rand::Rng> Generator<'a, R> {
     pub fn new(
         model: &'a [HashMap<Sequence<PacketProjection>, WeightedSampler<PacketProjection>>],
         quantizer: FlowQuantizer,
-        markov_order: usize,
+        markov_order: u32,
         length: usize,
         rng: R) -> Self
     {
@@ -68,7 +68,7 @@ impl<'a, R: rand::Rng> Generator<'a, R> {
             model,
             quantizer,
             markov_order,
-            history: Vec::with_capacity(markov_order),
+            history: Vec::with_capacity(markov_order as usize),
             emitted: 0,
             length,
             prev_timestamp: 0.0,
@@ -102,7 +102,7 @@ impl<'a, R: rand::Rng> PacketSource for Generator<'a, R> {
         self.prev_timestamp = packet.timestamp;
 
         self.history.push(packet);
-        if self.history.len() > self.markov_order {
+        if self.history.len() > self.markov_order as usize {
             self.history.remove(0);
         }
         self.emitted += 1;

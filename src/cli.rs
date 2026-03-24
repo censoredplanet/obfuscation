@@ -3,11 +3,11 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand, Args};
 use winnow::Parser as WinnowParser;
 use winnow::token::literal;
-use winnow::combinator::{seq};
+use winnow::combinator::{seq, alt, opt};
 use winnow::ascii::{space0, digit1};
 
 use crate::feature::FeatureKind;
-use crate::base::FlowFilterPredicate;
+use crate::base::{TLSVersion, FlowFilterPredicate};
 use crate::obfuscation::TLSMode;
 
 #[derive(Debug, Parser)]
@@ -128,8 +128,7 @@ fn default_pseudocount() -> f64 { 1.0 }
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Model {
-    pub markov_order: usize,
-    pub quantizer: PathBuf,
+    pub model_assumptions: PathBuf,
     #[serde(default = "default_pseudocount")]
     pub pseudocount: f64
 }
@@ -277,7 +276,7 @@ impl std::str::FromStr for FlowFilterPredicate {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut input = s;
         
-        let predicate = tls_data_packets_comp
+        let predicate = parse_flow_filter_predicate
             .parse_next(&mut input)
             .map_err(|e| format!("Bad flow predicate! {e:?}"))?;
 
@@ -291,12 +290,39 @@ impl TryFrom<String> for FlowFilterPredicate {
     fn try_from(s: String) -> Result<Self, Self::Error> {
         let mut input = s.as_str();
         
-        let predicate = tls_data_packets_comp
+        let predicate = parse_flow_filter_predicate
             .parse_next(&mut input)
             .map_err(|e| format!("Bad flow predicate! {e:?}"))?;
 
         Ok(predicate)
     }
+}
+
+fn parse_flow_filter_predicate(input: &mut &str) -> winnow::Result<FlowFilterPredicate> {
+    let left = atomic_predicate.parse_next(input)?;
+
+    let maybe_right = opt(seq!(
+        _: space0,
+        _: literal("&&"),
+        _: space0,
+        atomic_predicate
+    ))
+    .parse_next(input)?;
+
+    if let Some((right,)) = maybe_right {
+        Ok(FlowFilterPredicate::And(Box::new(left), Box::new(right)))
+    }
+    else {
+        Ok(left)
+    }
+}
+
+fn atomic_predicate(input: &mut &str) -> winnow::Result<FlowFilterPredicate> {
+    alt((
+        tls_data_packets_comp,
+        tls_version_comp,
+    ))
+    .parse_next(input)
 }
 
 fn tls_data_packets_comp(input: &mut &str) -> winnow::Result<FlowFilterPredicate> {
@@ -311,14 +337,17 @@ fn tls_data_packets_comp(input: &mut &str) -> winnow::Result<FlowFilterPredicate
     Ok(FlowFilterPredicate::MinTLSDataPackets(n.parse::<usize>().unwrap()))
 }
 
-// fn tls_version_comp(input: &mut &str) -> winnow::Result<FlowFilterPredicate> {
-//     let (n,) = seq!(
-//         _: literal("tlsVersion"),
-//         _: space0,
-//         _: literal("=="),
-//         _: space0,
-//         digit1,
-//     ).parse_next(input)?;
+fn tls_version_comp(input: &mut &str) -> winnow::Result<FlowFilterPredicate> {
+    let (version,) = seq!(
+        _: literal("tlsVersion"),
+        _: space0,
+        _: literal("=="),
+        _: space0,
+        alt((
+            literal("TLSv12").value(TLSVersion::TLSv12),
+            literal("TLSv13").value(TLSVersion::TLSv13),
+        ))
+    ).parse_next(input)?;
 
-//     Ok(FlowFilterPredicate::TLSVersionEq(TLSv12))
-// }
+    Ok(FlowFilterPredicate::TLSVersionEq(version))
+}

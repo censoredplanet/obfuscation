@@ -121,6 +121,7 @@ pub enum FlowFilterPredicate {
     None,
     MinTLSDataPackets(usize),
     TLSVersionEq(TLSVersion),
+    And(Box<FlowFilterPredicate>, Box<FlowFilterPredicate>)
 }
 
 impl FlowFilterPredicate {
@@ -143,7 +144,8 @@ impl FlowFilterPredicate {
                     ProtocolMetadata::Raw => false,
                     ProtocolMetadata::TLSMetadata { version, .. } => version == tls_version
                 }
-            }
+            },
+            FlowFilterPredicate::And(left, right) => left.matches(flow) && right.matches(flow)
         }
     }
 }

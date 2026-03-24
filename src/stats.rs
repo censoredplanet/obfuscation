@@ -249,7 +249,6 @@ pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, mar
         for (feature, num_bins) in feature_bins.into_iter() {
             let feature_quantizer = match feature.feature() {
                 FeatureKind::Direction => FeatureQuantizer::identity(feature),
-                FeatureKind::Entropy => FeatureQuantizer::mask(feature),
                 _ => FeatureQuantizer::uniform_bounded(feature, num_bins)
             };
             println!("\t{:#?}) nbins: {} | bin_width: {} | lower: {} | upper: {}", 
@@ -270,11 +269,9 @@ pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, mar
 
 pub fn propose_feature_bins(feature: &BoundedFeature, stats: &FeatureStats) -> u32 {
     match feature.feature() {
-        FeatureKind::Timestamp => {
-            freedman_diaconis_rule(&feature, stats.count, stats.iqr())
-        },
-        FeatureKind::Direction | FeatureKind::Size => feature.domain_size() as u32,
-        FeatureKind::Entropy => 1
+        FeatureKind::Timestamp | FeatureKind::Entropy => freedman_diaconis_rule(&feature, stats.count, stats.iqr()),
+        FeatureKind::Size => freedman_diaconis_rule(&feature, stats.count, stats.iqr()).max(feature.domain_size() as u32),
+        FeatureKind::Direction => feature.domain_size() as u32
     }
 }
 

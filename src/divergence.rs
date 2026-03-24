@@ -12,11 +12,11 @@ pub struct Right;
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct TrafficProfile {
     pub profile: Vec<Histogram<PacketProjection>>,
-    pub markov_order: usize
+    pub markov_order: u32
 }
 
 impl TrafficProfile {
-    pub fn empty(markov_order: usize) -> Self {
+    pub fn empty(markov_order: u32) -> Self {
         Self {
             profile: Vec::new(),
             markov_order
@@ -27,7 +27,7 @@ impl TrafficProfile {
         let mut kl = Vec::with_capacity(left.profile.len());
 
         for (i, (p, q)) in std::iter::zip(&left.profile, &right.profile).enumerate() {
-            if i < left.markov_order {
+            if i < left.markov_order as usize {
                 kl.push(p.kl_divergence(q));
             }
             else {
@@ -74,7 +74,7 @@ impl Merge for TrafficProfile {
 #[derive(Debug)]
 pub struct Divergence {
    pub vector: Box<[f64]>,
-   pub markov_order: usize
+   pub markov_order: u32
 }
 
 impl Divergence {
@@ -92,11 +92,11 @@ impl Divergence {
     pub fn sum_until(&self, i: usize) -> f64 {
         assert!(i < self.vector.len(), "Index {} out of bounds!", i);
 
-        if i < self.markov_order {
+        if i < self.markov_order as usize {
             self.vector[i]
         }
         else {
-            self.vector[self.markov_order..=i].iter().sum()
+            self.vector[(self.markov_order as usize)..=i].iter().sum()
         }
     }
 
