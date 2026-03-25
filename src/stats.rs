@@ -10,6 +10,8 @@ use crate::base::Flow;
 use crate::feature::{FeatureKind};
 use crate::quantization::{BoundedFeature, FeatureQuantizer, PacketQuantizer};
 
+const TDIGEST_BUFFER_SIZE: usize = 1024;
+
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct FeatureStats {
     pub count: usize,
@@ -17,7 +19,9 @@ pub struct FeatureStats {
     pub m2: f64,
     pub min: f64,
     pub max: f64,
-    pub tdigest: TDigest
+    pub tdigest: TDigest,
+    #[serde(skip)]
+    buffer: Vec<f64>,
 }
 
 impl FeatureStats {
@@ -32,7 +36,13 @@ impl FeatureStats {
         self.min = self.min.min(value);
         self.max = self.max.max(value);
 
-        self.tdigest = self.tdigest.merge_unsorted(vec![value]);
+        self.buffer.push(value);
+    }
+
+    pub fn flush_buffer(&mut self) {
+        if !self.buffer.is_empty() {
+            self.tdigest = self.tdigest.merge_unsorted(std::mem::take(&mut self.buffer));
+        }
     }
 
     pub fn variance(&self) -> f64 {
@@ -47,6 +57,10 @@ impl FeatureStats {
         self.variance().sqrt()
     }
 
+    // Technically, any operations that read t-digest should flush the buffer to ensure
+    // the t-digest is the most up-to-date. However, these operations are never done during
+    // merging. A better design would maybe be to enforce that FeatureStats are finalized before
+    // attempting to read them.
     pub fn iqr(&self) -> f64 {
         self.tdigest.estimate_quantile(0.75) - self.tdigest.estimate_quantile(0.25)
     }
@@ -60,7 +74,8 @@ impl Default for FeatureStats {
             m2: 0.0,
             min: f64::INFINITY,
             max: f64::NEG_INFINITY,
-            tdigest: TDigest::new_with_size(100)
+            tdigest: TDigest::new_with_size(100),
+            buffer: Vec::with_capacity(TDIGEST_BUFFER_SIZE)
         }
     }
 }
@@ -96,6 +111,11 @@ impl Merge for FeatureStats {
         self.max = self.max.max(other.max);
 
         self.tdigest = TDigest::merge_digests(vec![self.tdigest.clone(), other.tdigest.clone()]);
+        self.buffer.extend_from_slice(&other.buffer);
+        
+        if self.buffer.len() >= TDIGEST_BUFFER_SIZE {
+            self.flush_buffer();
+        }
     }
 }
 
@@ -127,14 +147,26 @@ impl TrafficStats {
         }
     }
 
+    pub fn finalize(&mut self) {
+        for stats_vec in self.stats.values_mut() {
+            for stats in stats_vec.iter_mut() {
+                stats.flush_buffer();
+            }
+        }
+    }
+
     pub fn from_flows(flows: &[Flow]) -> Self {
-        flows.par_iter()
+        let mut traffic_stats = flows.par_iter()
             .map(|flow| {
                 let mut stats = Self::default();
                 stats.update(flow);
                 stats
             })
-            .reduce(Self::default, |accumulator, stats| accumulator.merge(stats))
+            .reduce(Self::default, |accumulator, stats| accumulator.merge(stats));
+        
+        traffic_stats.finalize();
+
+        traffic_stats
     }
 
     pub fn view(&self) -> TrafficStatsView<'_> {
