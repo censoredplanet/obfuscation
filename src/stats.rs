@@ -1,5 +1,6 @@
 use std::fmt;
 
+use rayon::prelude::*;
 use hashbrown::HashMap;
 use tdigest::TDigest;
 use enumflags2::BitFlags;
@@ -112,15 +113,28 @@ pub struct TrafficStatsView<'a> {
 
 impl TrafficStats {
     pub fn update(&mut self, flow: &Flow) {
-        for (i, packet) in flow.packets.iter().enumerate() {
-            for feature in FeatureKind::iter() {
-                let vec = self.stats.entry(feature.clone()).or_default();
-                if vec.len() <= i {
-                    vec.resize_with(i + 1, FeatureStats::default);
-                }
-                vec[i].update(packet.get_feature(&feature));
+        let flow_length = flow.packets.len();
+
+        for feature in FeatureKind::iter() {
+            let stats_vec = self.stats.entry(feature.clone()).or_default();
+            if stats_vec.len() < flow_length {
+                stats_vec.resize_with(flow_length, FeatureStats::default);
+            }
+
+            for (i, packet) in flow.packets.iter().enumerate() {
+                stats_vec[i].update(packet.get_feature(&feature));
             }
         }
+    }
+
+    pub fn from_flows(flows: &[Flow]) -> Self {
+        flows.par_iter()
+            .map(|flow| {
+                let mut stats = Self::default();
+                stats.update(flow);
+                stats
+            })
+            .reduce(Self::default, |accumulator, stats| accumulator.merge(stats))
     }
 
     pub fn view(&self) -> TrafficStatsView<'_> {

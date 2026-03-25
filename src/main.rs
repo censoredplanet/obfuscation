@@ -367,10 +367,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     preprocess(&mut flows, args.strip_tls_handshake);
 
-                    let mut traffic_stats = TrafficStats::default();
-                    for flow in flows.iter() {
-                        traffic_stats.update(&flow);
-                    }
+                    let traffic_stats = TrafficStats::from_flows(&flows);
 
                     println!("Done computing stats at {:#?}s", now.elapsed()?.as_secs());
 
