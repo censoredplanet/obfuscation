@@ -30,16 +30,25 @@ impl Packet {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum TLSVersion {
+    SSL,
+    TLSv10,
+    TLSv11,
     TLSv12,
-    TLSv13
+    TLSv13,
+    Unknown64282, // A Facebook-created variant of TLS 1.3
+    Other // catch-all for now
 }
 
 impl From<&[u8]> for TLSVersion {
     fn from(bytes: &[u8]) -> Self {
         match bytes {
+            b"SSL" => TLSVersion::SSL,
+            b"TLSv10" => TLSVersion::TLSv10,
+            b"TLSv11" => TLSVersion::TLSv11,
             b"TLSv12" => TLSVersion::TLSv12,
             b"TLSv13" => TLSVersion::TLSv13,
-            _ => unreachable!(),
+            b"unknown-64282" => TLSVersion::Unknown64282,
+            _ => TLSVersion::Other,
         }
     }
 }

@@ -456,7 +456,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let kl_divergence = left.kl_divergence(&right);
                     let reverse_kl_divergence = left.reverse_kl_divergence(&right);
 
-                    println!("Cumulative Sum: {:#?}", kl_divergence.cumulative_sum());
+                    println!("Cumulative Sum: {:#?}", kl_divergence.cumulative_divergence());
                     println!("Bayes Error (Lower Bound): {:#?}", kl_divergence.bayes_error_lower_bound());
 
                     println!("Chernoff-Stein: {:#?}", kl_divergence.chernoff_stein_lemma(1000));

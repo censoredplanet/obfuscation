@@ -1,8 +1,10 @@
 use std::marker::PhantomData;
 
+use hashbrown::HashMap;
+
 use crate::merge::*;
 use crate::quantization::PacketProjection;
-use crate::histograms::{Histogram, merge_histogram_vecs};
+use crate::histograms::{Histogram, merge_histogram_vecs, Sequence};
 
 #[derive(Debug)]
 pub struct Left;
@@ -23,18 +25,15 @@ impl TrafficProfile {
         }
     }
 
-    fn kl(left: &TrafficProfile, right: &TrafficProfile) -> Vec<f64> {
+    fn compute_kl_terms(left: &TrafficProfile, right: &TrafficProfile) -> Vec<HashMap<Sequence<PacketProjection>, f64>> {
         let mut kl = Vec::with_capacity(left.profile.len());
 
         for (i, (p, q)) in std::iter::zip(&left.profile, &right.profile).enumerate() {
             if i < left.markov_order as usize {
-                kl.push(p.kl_divergence(q));
+                kl.push(p.kl_divergence(q))
             }
             else {
-                let p_prefix = p.prefix_histogram();
-                let q_prefix = q.prefix_histogram();
-
-                kl.push(p.kl_divergence(q) - p_prefix.kl_divergence(&q_prefix));
+                kl.push(p.conditional_kl_divergence(q));
             }
         }
 
@@ -44,7 +43,7 @@ impl TrafficProfile {
     pub fn kl_divergence(&self, right: &TrafficProfile) -> KLDivergence<Left, Right> {
         KLDivergence {
             divergence: Divergence {
-                vector: Self::kl(self, right).into_boxed_slice(),
+                terms: Self::compute_kl_terms(self, right).into_boxed_slice(),
                 markov_order: self.markov_order
             },
             _marker: PhantomData
@@ -54,7 +53,7 @@ impl TrafficProfile {
     pub fn reverse_kl_divergence(&self, left: &TrafficProfile) -> KLDivergence<Right, Left> {
         KLDivergence {
             divergence: Divergence {
-                vector: Self::kl(left, self).into_boxed_slice(),
+                terms: Self::compute_kl_terms(left, self).into_boxed_slice(),
                 markov_order: self.markov_order
             },
             _marker: PhantomData
@@ -73,15 +72,46 @@ impl Merge for TrafficProfile {
 
 #[derive(Debug)]
 pub struct Divergence {
-   pub vector: Box<[f64]>,
-   pub markov_order: u32
+    pub terms: Box<[HashMap<Sequence<PacketProjection>, f64>]>,
+    pub markov_order: u32
 }
 
 impl Divergence {
-    pub fn argmax(&self) -> usize {
-        assert!(!self.vector.is_empty());
+    fn per_index_divergence(&self) -> Box<[f64]> {
+        let index_sums = self.terms.iter()
+            .map(|m| m.values().sum())
+            .collect::<Vec<f64>>();
+        
+        (0..index_sums.len())
+            .map(|i| {
+                if i > 0 && i < self.markov_order as usize {
+                    index_sums[i] - index_sums[i - 1]
+                } 
+                else {
+                    index_sums[i]
+                }
+            })
+            .collect()
+    }
 
-        self.vector
+    fn cumulative_divergence(&self) -> Box<[f64]> {
+        let index_terms = self.per_index_divergence();
+        let mut sum = 0.0;
+
+        index_terms.iter()
+            .map(|e| {
+                sum += e;
+                sum
+            })
+            .collect()
+    }
+
+    pub fn total_divergence(&self) -> f64 {
+        self.per_index_divergence().iter().sum()
+    }
+
+    pub fn max_index(&self) -> usize {
+        self.per_index_divergence()
             .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.total_cmp(b))
@@ -89,26 +119,12 @@ impl Divergence {
             .unwrap()
     }
 
-    pub fn sum_until(&self, i: usize) -> f64 {
-        assert!(i < self.vector.len(), "Index {} out of bounds!", i);
-
-        if i < self.markov_order as usize {
-            self.vector[i]
-        }
-        else {
-            self.vector[(self.markov_order as usize)..=i].iter().sum()
-        }
-    }
-
-    pub fn sum(&self) -> f64 {
-        self.sum_until(self.vector.len() - 1)
-    }
-
-    pub fn cumulative_sum(&self) -> Box<[f64]> {
-        (0..self.vector.len())
-            .map(|i| self.sum_until(i))
-            .collect::<Vec<_>>()
-            .into_boxed_slice()
+    pub fn max_packet_at_idx(&self, idx: usize) -> &Sequence<PacketProjection> {
+        self.terms[idx]
+            .iter()
+            .max_by(|(_, a), (_, b)| a.total_cmp(b))
+            .map(|(k, _)| k)
+            .unwrap()
     }
 }
 
@@ -120,7 +136,7 @@ pub struct KLDivergence<P, Q> {
 
 impl<P, Q> KLDivergence<P, Q> {
     fn error_decay(&self, n: usize) -> Box<[f64]> {
-        self.divergence.cumulative_sum()
+        self.divergence.cumulative_divergence()
             .into_iter()
             .map(|v| (-(n as f64) * v).exp())
             .collect::<Vec<_>>()
@@ -130,12 +146,12 @@ impl<P, Q> KLDivergence<P, Q> {
 
 // TODO: refactor common logic into helper function
 impl KLDivergence<Left, Right> {
-    pub fn cumulative_sum(&self) -> Box<[f64]> {
-        self.divergence.cumulative_sum()
+    pub fn cumulative_divergence(&self) -> Box<[f64]> {
+        self.divergence.cumulative_divergence()
     }
     
     pub fn pinsker(&self) -> Box<[f64]> {
-        self.divergence.cumulative_sum()
+        self.divergence.cumulative_divergence()
             .into_iter()
             .map(|v| (v / 2.0).sqrt())
             .collect::<Vec<_>>()
@@ -143,7 +159,7 @@ impl KLDivergence<Left, Right> {
     }
 
     pub fn bretagnolle_huber(&self) -> Box<[f64]> {
-        self.divergence.cumulative_sum()
+        self.divergence.cumulative_divergence()
             .into_iter()
             .map(|v| (1.0 - (-v).exp()).sqrt())
             .collect::<Vec<_>>()

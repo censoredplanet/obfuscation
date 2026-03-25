@@ -82,26 +82,6 @@ where
         self.alphabet_size.pow(self.sequence_len as u32)
     }
 
-    pub fn empirical_probability(&self, x: &Sequence<K>) -> f64 {
-        let count = *self.counts.get(x).unwrap_or(&0);
-        count as f64 / self.total as f64
-    }
-
-    pub fn smoothed_probability(&self, x: &Sequence<K>) -> f64 {
-        let count = *self.counts.get(x).unwrap_or(&0);
-        (count as f64 + self.alpha) / (self.total as f64 + self.alpha * self.domain_size() as f64)
-    }
-
-    pub fn prefix_histogram(&self) -> Self {
-        assert!(self.sequence_len != 0, "Cannot take prefix of empty sequences");
-
-        let mut histogram = Histogram::new(self.alphabet_size, self.sequence_len - 1, self.alpha);
-        for (key, count) in self.counts.iter() {
-            histogram.increment_by(key.prefix(), *count);
-        }
-        histogram
-    }
-
     pub fn conditional_histogram(&self) -> HashMap<Sequence<K>, Histogram<K>> {
         let mut conditionals: HashMap<Sequence<K>, Histogram<K>> = HashMap::new();
         
@@ -122,14 +102,68 @@ where
         conditionals
     }
 
-    pub fn kl_divergence(&self, other: &Histogram<K>) -> f64 {
-        let mut kl = 0.0;
+    // TODO: eventually introduce ProbabilityDistribution type so that different smoothing
+    // choices don't require rebuilding histograms
+    pub fn empirical_probability(&self, x: &Sequence<K>) -> f64 {
+        let count = *self.counts.get(x).unwrap_or(&0);
+        count as f64 / self.total as f64
+    }
+
+    pub fn smoothed_probability(&self, x: &Sequence<K>) -> f64 {
+        let count = *self.counts.get(x).unwrap_or(&0);
+        (count as f64 + self.alpha) / (self.total as f64 + self.alpha * self.domain_size() as f64)
+    }
+
+    pub fn prefix_marginal_probabilities(&self) -> HashMap<Sequence<K>, f64> {
+        let mut prefix_probabilities = HashMap::new();
+
+        for key in self.counts.keys() {
+            let prefix = key.prefix();
+            *prefix_probabilities.entry(prefix).or_insert(0.0) += self.smoothed_probability(key);
+        }
+
+        prefix_probabilities
+    }
+
+    pub fn kl_divergence(&self, other: &Histogram<K>) -> HashMap<Sequence<K>, f64> 
+    where 
+        K: Eq + std::hash::Hash + Clone
+    {
+        let mut contributions = HashMap::new();
+
         for x in self.counts.keys() {
             let p = self.smoothed_probability(x);
             let q = other.smoothed_probability(x);
-            kl += p * (p / q).log2();
+            
+            let contribution = p * (p / q).ln();
+            contributions.insert(x.clone(), contribution);
         }
-        kl
+        
+        contributions
+    }
+
+    pub fn conditional_kl_divergence(&self, other: &Histogram<K>) -> HashMap<Sequence<K>, f64> {
+        let p_prefix_probabilities = self.prefix_marginal_probabilities();
+        let q_prefix_probabilities = other.prefix_marginal_probabilities();
+
+        let mut contributions = HashMap::new();
+
+        for x in self.counts.keys() {
+            let prefix = x.prefix();
+
+            let p = self.smoothed_probability(x);
+            let p_prefix = p_prefix_probabilities.get(&prefix).unwrap();
+            let p_given_prefix = p / p_prefix;
+
+            let q = other.smoothed_probability(x);
+            let q_prefix = q_prefix_probabilities.get(&prefix).unwrap();
+            let q_given_prefix = q / q_prefix;
+            
+            let contribution = p * (p_given_prefix / q_given_prefix).ln();
+            contributions.insert(x.clone(), contribution);
+        }
+        
+        contributions        
     }
 }
 
