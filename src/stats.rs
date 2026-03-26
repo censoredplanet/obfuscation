@@ -269,7 +269,6 @@ pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, mar
 
                 let bounded_feature = match feature {
                     FeatureKind::Timestamp => {
-                        println!("{:#?} {:#?}", stats.tdigest.estimate_quantile(0.01), stats.tdigest.estimate_quantile(0.99));
                         let effective_min = stats.tdigest.estimate_quantile(0.01).max(feature.domain().min);
                         let effective_max = stats.tdigest.estimate_quantile(0.99).min(feature.domain().max);
 
@@ -352,9 +351,10 @@ pub fn greedy_shrink_bins(
 }
 
 pub fn bins_from_sample_complexity(n: usize, epsilon: f64, delta: f64) -> usize {
-    let k = n as f64 * (epsilon * epsilon);
-    assert!(k >= 2.0 * (2.0 / delta).ln(), "Not enough samples! Relax epsilon and/or delta.");
-    k.floor() as usize
+    let squared_epsilon = epsilon * epsilon;
+    let min_samples = (2.0 / squared_epsilon) * (2.0 / delta).ln();
+    assert!(n as f64 >= min_samples, "Not enough samples! Have {}, but need at least {} samples. Relax epsilon and/or delta.", n, min_samples.ceil());
+    (n as f64 * squared_epsilon).floor() as usize
 }
 
 pub fn scotts_rule(feature: &BoundedFeature, n: usize, sigma: f64) -> u32 {

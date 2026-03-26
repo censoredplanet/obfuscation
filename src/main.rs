@@ -218,7 +218,7 @@ pub fn write_as_feature_vectors(flows: &[QuantizedFlow], quantization_scheme: &F
 pub fn read_and_filter_flows(source: &FlowSource) -> Result<Vec<Flow>, Box<dyn Error>> {
     match source {
         FlowSource::Empirical { path, flow_filter } => {
-            Ok(Vec::<Flow>::from_file(path)?
+            Ok(Vec::<Flow>::from_file(&path.as_ref().unwrap())?
                 .into_par_iter()
                 .filter(|flow| flow_filter.matches(flow))
                 .collect::<Vec<Flow>>())
@@ -360,7 +360,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let now = SystemTime::now();
 
                     let mut flows = read_and_filter_flows(&FlowSource::Empirical {
-                        path: args.flows, 
+                        path: Some(args.flows), 
                         flow_filter: args.flow_filter
                     })?;
                     println!("Reading {} flows finished at {:#?}s", flows.len(), now.elapsed()?.as_secs());
@@ -409,7 +409,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
         Commands::Pipeline(args) => {
             let content = std::fs::read_to_string(&args.config)?;
-            let config: PipelineConfig = toml::from_str(&content)?;
+            let mut config: PipelineConfig = toml::from_str(&content)?;
+            resolve(&mut config, &args);
             println!("{:#?}", config);
             run_pipeline(config, args)?
         }

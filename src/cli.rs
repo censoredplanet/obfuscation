@@ -55,12 +55,9 @@ pub enum StatsCommand {
 
 #[derive(Debug, Args)]
 pub struct StatsComputeArgs {
-    /// Zeek log containing flow metadata
+    /// Path to flows
     #[arg(long)]
     pub flows: PathBuf,
-    // Zeek log containing packet features
-    // #[arg(long)]
-    // pub packets: String,
     #[arg(long, default_value = "tlsDataPackets >= 0")] // this is hack for always true, make this better
     pub flow_filter: FlowFilterPredicate,
     #[arg(long)]
@@ -107,10 +104,10 @@ pub struct StatsDisplayArgs {
     pub index: Option<usize>
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, Clone)]
 pub enum FlowSource {
     Empirical {
-        path: PathBuf,
+        path: Option<PathBuf>,
         flow_filter: FlowFilterPredicate
     },
     Generated {
@@ -150,6 +147,8 @@ pub struct PipelineConfig {
 pub struct PipelineArgs {
     #[arg(long)]
     pub config: PathBuf,
+    #[arg(long)]
+    pub flows: Option<PathBuf>,
     /// Output path for histograms
     #[arg(long)]
     pub histograms: PathBuf,
@@ -350,4 +349,17 @@ fn tls_version_comp(input: &mut &str) -> winnow::Result<FlowFilterPredicate> {
     ).parse_next(input)?;
 
     Ok(FlowFilterPredicate::TLSVersionEq(version))
+}
+
+// Allow the --flows command line option to override whatever is in config
+pub fn resolve(config: &mut PipelineConfig, args: &PipelineArgs) {
+    if let FlowSource::Empirical { path, flow_filter: _ } = &mut config.source_a {
+        let new_path = args.flows
+            .as_ref()
+            .cloned()
+            .or(path.take())
+            .expect("missing flow source path");
+
+        *path = Some(new_path);
+    }
 }
