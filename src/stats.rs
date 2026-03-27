@@ -350,6 +350,7 @@ pub fn greedy_shrink_bins(
     }
 }
 
+// TODO: instead of assertion, return Result so can create stats up to furthest possible packet index
 pub fn bins_from_sample_complexity(n: usize, epsilon: f64, delta: f64) -> usize {
     let squared_epsilon = epsilon * epsilon;
     let min_samples = (2.0 / squared_epsilon) * (2.0 / delta).ln();

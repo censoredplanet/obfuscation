@@ -34,6 +34,11 @@ impl<T: fmt::Display + Clone> fmt::Display for Sequence<T> {
     }
 }
 
+pub enum DistributionType {
+    Empirical,
+    Smoothed
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 #[serde(bound(
     serialize = "K: serde::Serialize + Eq + std::hash::Hash",
@@ -114,12 +119,16 @@ where
         (count as f64 + self.alpha) / (self.total as f64 + self.alpha * self.domain_size() as f64)
     }
 
-    pub fn prefix_marginal_probabilities(&self) -> HashMap<Sequence<K>, f64> {
+    pub fn prefix_marginal_probabilities(&self, distribution_type: DistributionType) -> HashMap<Sequence<K>, f64> {
         let mut prefix_probabilities = HashMap::new();
 
         for key in self.counts.keys() {
             let prefix = key.prefix();
-            *prefix_probabilities.entry(prefix).or_insert(0.0) += self.smoothed_probability(key);
+            let probability = match distribution_type {
+                DistributionType::Empirical => self.empirical_probability(key),
+                DistributionType::Smoothed => self.smoothed_probability(key)
+            };
+            *prefix_probabilities.entry(prefix).or_insert(0.0) += probability;
         }
 
         prefix_probabilities
@@ -132,7 +141,7 @@ where
         let mut contributions = HashMap::new();
 
         for x in self.counts.keys() {
-            let p = self.smoothed_probability(x);
+            let p = self.empirical_probability(x);
             let q = other.smoothed_probability(x);
             
             let contribution = p * (p / q).ln();
@@ -143,15 +152,15 @@ where
     }
 
     pub fn conditional_kl_divergence(&self, other: &Histogram<K>) -> HashMap<Sequence<K>, f64> {
-        let p_prefix_probabilities = self.prefix_marginal_probabilities();
-        let q_prefix_probabilities = other.prefix_marginal_probabilities();
+        let p_prefix_probabilities = self.prefix_marginal_probabilities(DistributionType::Empirical);
+        let q_prefix_probabilities = other.prefix_marginal_probabilities(DistributionType::Smoothed);
 
         let mut contributions = HashMap::new();
 
         for x in self.counts.keys() {
             let prefix = x.prefix();
 
-            let p = self.smoothed_probability(x);
+            let p = self.empirical_probability(x);
             let p_prefix = p_prefix_probabilities.get(&prefix).unwrap();
             let p_given_prefix = p / p_prefix;
 
