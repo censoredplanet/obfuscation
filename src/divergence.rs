@@ -101,7 +101,7 @@ impl Divergence {
         index_terms.iter()
             .map(|e| {
                 sum += e;
-                sum
+                sum.max(0.0)
             })
             .collect()
     }
