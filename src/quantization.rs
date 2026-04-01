@@ -218,7 +218,7 @@ impl FeatureQuantizer {
     }
 
     pub fn quantize_feature(&self, value: f64) -> FeatureValue {
-        assert!(self.feature.min() <= value && value <= self.feature.max(), "Value out of range.");
+        assert!(self.feature.min() <= value && value <= self.feature.max(), "Value {} out of range [{}, {}].", value, self.feature.min(), self.feature.max());
 
         match self.quantization {
             Quantization::Mask => FeatureValue::Masked,
