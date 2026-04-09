@@ -24,7 +24,8 @@ pub enum Commands {
     Pipeline(PipelineArgs),
     Generate(GenerateArgs),
     Obfuscation(ObfuscationCli),
-    Histograms(HistogramsCli)
+    Histograms(HistogramsCli),
+    Divergence(DivergenceCli),
 }
 
 #[derive(Debug, Args)]
@@ -70,7 +71,7 @@ pub struct StatsComputeArgs {
 pub struct StatsMergeArgs {
     /// Path to a directory containing TrafficStats files
     #[arg(long)]
-    pub input: String,
+    pub input: PathBuf,
     /// Path to the merged TrafficStats file
     #[arg(long)]
     pub output: PathBuf
@@ -80,7 +81,7 @@ pub struct StatsMergeArgs {
 pub struct StatsBinArgs {
     /// Path to a TrafficStats file
     #[arg(long)]
-    pub input: String,
+    pub input: PathBuf,
     /// A quantizer specification that bins features based on the provided TrafficStats
     #[arg(long)]
     pub output: PathBuf,
@@ -248,6 +249,12 @@ pub struct HistogramsDisplayArgs {
     pub input: String,
     #[arg(long)]
     pub index: usize,
+    #[arg(long)]
+    pub min_count: Option<usize>,
+    #[arg(long)]
+    pub min_probability: Option<f64>,
+    #[arg(long)]
+    pub top_k: Option<usize>
 }
 
 #[derive(Debug, Args)]
@@ -261,9 +268,44 @@ pub struct HistogramsMergeArgs {
 #[derive(Debug, Args)]
 pub struct HistogramsDivergenceArgs {
     #[arg(long)]
-    pub left: String,
+    pub left: PathBuf,
     #[arg(long)]
-    pub right: String
+    pub right: PathBuf,
+    #[arg(long)]
+    pub output: PathBuf
+}
+
+#[derive(Debug, Parser)]
+pub struct DivergenceCli {
+    #[command(subcommand)]
+    pub command: DivergenceCommands
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DivergenceCommands {
+    Cumulative(DivergenceCumulativeArgs),
+    Delta(DivergenceDeltaArgs),
+    Terms(DivergenceTermsArgs)
+}
+
+#[derive(Debug, Args)]
+pub struct DivergenceCumulativeArgs {
+    #[arg(long)]
+    pub input: PathBuf
+}
+
+#[derive(Debug, Args)]
+pub struct DivergenceDeltaArgs {
+    #[arg(long)]
+    pub input: PathBuf
+}
+
+#[derive(Debug, Args)]
+pub struct DivergenceTermsArgs {
+    #[arg(long)]
+    pub input: PathBuf,
+    #[arg(long)]
+    pub index: usize
 }
 
 // ===============

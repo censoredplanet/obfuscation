@@ -374,11 +374,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                     traffic_stats.write(&args.output)?;
                 },
                 StatsCommand::Merge(args) => {
-                    let merged = merge_from_directory::<TrafficStats>(Path::new(&args.input))?;
+                    let merged = merge_from_directory::<TrafficStats>(&args.input)?;
                     merged.write(&args.output)?;
                 },
                 StatsCommand::Bin(args) => {
-                    let traffic_stats = TrafficStats::from_file(Path::new(&args.input))?;
+                    let traffic_stats = TrafficStats::from_file(&args.input)?;
 
                     let mut feature_mask = BitFlags::<FeatureKind>::all();
                     feature_mask.remove(FeatureKind::Entropy);
@@ -392,7 +392,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     write_json(model_assumptions, &args.output)?;
                 },
                 StatsCommand::Display(args) => {
-                    let traffic_stats = TrafficStats::from_file(Path::new(&args.input))?;
+                    let traffic_stats = TrafficStats::from_file(&args.input)?;
                     
                     let mut view = traffic_stats.view();
                     
@@ -445,20 +445,21 @@ fn main() -> Result<(), Box<dyn Error>> {
             match histograms_cli.command {
                 HistogramsCommands::Display(args) => {
                     let histograms = Vec::<Histogram<PacketProjection>>::from_file(Path::new(&args.input))?;
-                    println!("{}", histograms[args.index]);
+                    let view = HistogramViewBuilder::new()
+                        .min_count(args.min_count)
+                        .min_probability(args.min_probability) 
+                        .top_k(args.top_k)
+                        .from_histogram(&histograms[args.index]);
+                    
+                    println!("{}", view);
                 }
                 HistogramsCommands::Divergence(args) => {
-                    let left = TrafficProfile::from_file(Path::new(&args.left))?;
-                    let right = TrafficProfile::from_file(Path::new(&args.right))?;
+                    let left = TrafficProfile::from_file(&args.left)?;
+                    let right = TrafficProfile::from_file(&args.right)?;
 
                     let kl_divergence = left.kl_divergence(&right);
-                    let reverse_kl_divergence = left.reverse_kl_divergence(&right);
-
-                    println!("Cumulative Sum: {:#?}", kl_divergence.cumulative_divergence());
-                    println!("Bayes Error (Lower Bound): {:#?}", kl_divergence.bayes_error_lower_bound());
-
-                    println!("Chernoff-Stein: {:#?}", kl_divergence.chernoff_stein_lemma(1000));
-                    println!("Sanov: {:#?}", reverse_kl_divergence.sanovs_theorem(1000));
+                    
+                    kl_divergence.write(&args.output)?;
                 }
                 HistogramsCommands::Merge(args) => {
                     let traffic_profile = merge_from_directory::<TrafficProfile>(&args.input)?;
@@ -466,6 +467,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
         },
+        Commands::Divergence(divergence_cli) => {
+            match divergence_cli.command {
+                DivergenceCommands::Cumulative(args) => {
+                    let divergence = KLDivergence::from_file(&args.input)?;
+                    println!("{:?}", divergence.cumulative_divergence());
+                },
+                DivergenceCommands::Delta(args) => {
+                    let divergence = KLDivergence::from_file(&args.input)?;
+                    println!("{:?}", divergence.per_index_divergence());
+                },
+                DivergenceCommands::Terms(args) => {
+                    let divergence = KLDivergence::from_file(&args.input)?;
+                    println!("{:?}", divergence.max_index());
+                    divergence.max_packet_at_idx(1);
+                }
+            }
+        }
     }
 
     Ok(())

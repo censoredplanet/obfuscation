@@ -87,18 +87,15 @@ pub fn as_histogram(flow: &QuantizedFlow, quantizer: &FlowQuantizer, order: u32,
         let mut histogram = Histogram::new(alphabet_size, sequence_len, pseudocount);
 
         let seq = match quantizer {
-            FlowQuantizer::Global(_) => flow.quantized.packets[start..=i].to_vec().into_boxed_slice(),
+            FlowQuantizer::Global(_) => flow.quantized.packets[start..=i].to_vec(),
             FlowQuantizer::PerPacket(_) => {
                 (start..=i)
                     .map(|j| quantizer.quantizer_at(i).quantize_packet(&flow.raw[j]))
                     .collect::<Vec<_>>()
-                    .into_boxed_slice()
             }
         };
 
-        histogram.increment(Sequence {
-            sequence: seq
-        });
+        histogram.increment(Sequence::from(seq));
         histograms.push(histogram);
     }
 

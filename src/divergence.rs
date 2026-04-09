@@ -70,7 +70,7 @@ impl Merge for TrafficProfile {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Divergence {
     pub terms: Box<[HashMap<Sequence<PacketProjection>, f64>]>,
     pub markov_order: u32
@@ -119,16 +119,22 @@ impl Divergence {
             .unwrap()
     }
 
-    pub fn max_packet_at_idx(&self, idx: usize) -> &Sequence<PacketProjection> {
-        self.terms[idx]
+    pub fn max_packet_at_idx(&self, idx: usize) {
+        let mut sorted_terms = self.terms[idx]
             .iter()
-            .max_by(|(_, a), (_, b)| a.total_cmp(b))
-            .map(|(k, _)| k)
-            .unwrap()
+            .collect::<Vec<_>>();
+        
+        sorted_terms.sort_by(|(_, a), (_, b)| a.total_cmp(b));
+        
+        for (sequence, contribution) in sorted_terms {
+            println!("{} {}", sequence, contribution);
+        }
     }
 }
 
-#[derive(Debug)]
+impl PostcardIO for Divergence {}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct KLDivergence<P, Q> {
     divergence: Divergence,
     _marker: PhantomData<(P, Q)>,
@@ -148,6 +154,18 @@ impl<P, Q> KLDivergence<P, Q> {
 impl KLDivergence<Left, Right> {
     pub fn cumulative_divergence(&self) -> Box<[f64]> {
         self.divergence.cumulative_divergence()
+    }
+
+    pub fn per_index_divergence(&self) -> Box<[f64]> {
+        self.divergence.per_index_divergence()
+    }
+
+    pub fn max_index(&self) -> usize {
+        self.divergence.max_index()
+    }
+
+    pub fn max_packet_at_idx(&self, idx: usize) {
+        self.divergence.max_packet_at_idx(idx)
     }
     
     pub fn pinsker(&self) -> Box<[f64]> {
@@ -183,3 +201,5 @@ impl KLDivergence<Right, Left> {
         self.error_decay(n)
     }
 }
+
+impl<P, Q> PostcardIO for KLDivergence<P, Q> {}

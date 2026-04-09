@@ -1,23 +1,36 @@
 use std::fmt;
+use std::sync::Arc;
 
 use hashbrown::HashMap;
 
 use crate::merge::{Merge, PostcardIO};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, std::hash::Hash)]
-pub struct Sequence<T: Clone> {
-    pub sequence: Box<[T]>
+pub struct Sequence<T> {
+    pub sequence: Arc<[T]>,
+    len: usize
 }
 
 impl<T: Clone> Sequence<T> {
     pub fn prefix(&self) -> Self {
         Sequence {
-            sequence: self.sequence[0..(self.sequence.len() - 1)].into()
+            sequence: Arc::clone(&self.sequence),
+            len: self.len.saturating_sub(1)
         }
     }
 
     pub fn last(&self) -> T {
         self.sequence[self.sequence.len() - 1].clone()
+    }
+}
+
+impl<T> From<Vec<T>> for Sequence<T> {
+    fn from(value: Vec<T>) -> Self {
+        let len = value.len();
+        Sequence {
+            sequence: value.into(),
+            len: len
+        }
     }
 }
 
@@ -87,9 +100,7 @@ where
         
         for (sequence, count) in self.counts.iter() {
             let prefix = sequence.prefix();
-            let last = Sequence {
-                sequence: vec![sequence.last()].into()
-            };
+            let last = Sequence::from(vec![sequence.last()]);
 
             let histogram = conditionals
                 .entry(prefix)
@@ -181,23 +192,6 @@ impl<K: Eq + std::hash::Hash + Clone> Merge for Histogram<K> {
     }
 }
 
-impl<K: serde::Serialize + Eq + std::hash::Hash + Clone + fmt::Display> fmt::Display for Histogram<K> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut items: Vec<_> = self.counts.iter().collect();
-        items.sort_by_key(|&(_, c)| std::cmp::Reverse(*c));
-
-        writeln!(f, "{:<10}\t{:<12}\t{}", "Count", "Prob", "Sequence")?;
-        for (key, count) in items {
-            let probability = self.empirical_probability(key);
-            writeln!(f, "{:<10}\t{:<12.4}\t{}", count, probability, key)?;
-        }
-
-        writeln!(f, "[Support Size: {} | # Observations: {}]", self.support_size(), self.total)?;
-
-        Ok(())
-    }
-}
-
 impl<T> PostcardIO for Vec<Histogram<T>>
 where
     T: serde::Serialize + serde::de::DeserializeOwned + Eq + std::hash::Hash + Clone,
@@ -213,5 +207,86 @@ where
 
     for (idx, histogram) in histograms.iter().enumerate() {
         accumulator[idx].merge_in_place(histogram);
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct HistogramViewBuilder {
+    min_count: Option<usize>,
+    min_probability: Option<f64>,
+    top_k: Option<usize>
+}
+
+impl HistogramViewBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn min_count(mut self, count: impl Into<Option<usize>>) -> Self {
+        self.min_count = count.into();
+        self
+    }
+
+    pub fn min_probability(mut self, probability: impl Into<Option<f64>>) -> Self {
+        self.min_probability = probability.into();
+        self
+    }
+
+    pub fn top_k(mut self, k: impl Into<Option<usize>>) -> Self {
+        self.top_k = k.into();
+        self
+    }
+
+    pub fn from_histogram<'a, K>(self, histogram: &'a Histogram<K>) -> HistogramView<'a, K> 
+    where K: Eq + std::hash::Hash + Clone
+    {
+        HistogramView {
+            config: self,
+            histogram: histogram
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct HistogramView<'a, K: Eq + std::hash::Hash + Clone> {
+    config: HistogramViewBuilder,
+    histogram: &'a Histogram<K>
+}
+
+impl<'a, K: Eq + std::hash::Hash + Clone> HistogramView<'a, K> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Sequence<K>, &usize)> {
+        let total = self.histogram.total;
+
+        let mut entries: Vec<_> = self.histogram.counts.iter()
+            .filter(|&(_, &count)| {
+                self.config.min_count.map_or(true, |min| count >= min) &&
+                self.config.min_probability.map_or(true, |min| (count as f64) / (total as f64) >= min)
+            })
+            .collect();
+
+        if let Some(k) = self.config.top_k {
+            if k < entries.len() {
+                entries.select_nth_unstable_by(k - 1, |(_, a), (_, b)| b.cmp(a));
+                entries.truncate(k);
+            }
+        }
+
+        entries.sort_unstable_by(|(_, a), (_, b)| b.cmp(a));
+
+        entries.into_iter()
+    }
+}
+
+impl<'a, K: serde::Serialize + Eq + std::hash::Hash + Clone + fmt::Display> fmt::Display for HistogramView<'a, K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{:<10}\t{:<12}\t{}", "Count", "Prob", "Sequence")?;
+        for (key, &count) in self.iter() {
+            let probability = (count as f64) / (self.histogram.total as f64);
+            writeln!(f, "{:<10}\t{:<12.4}\t{}", count, probability, key)?;
+        }
+
+        writeln!(f, "[Support Size: {} | # Observations: {}]", self.histogram.support_size(), self.histogram.total)?;
+
+        Ok(())
     }
 }
