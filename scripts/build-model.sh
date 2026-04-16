@@ -68,10 +68,10 @@ find "$DATA_DIR" -type d | while read -r DIR; do
 
     ls -1 "${DIR}"/flows*.bin*
 done | xargs -n 1 -P 8 bash -c '
-    obfs pipeline \
+    obfs pipeline histograms \
         --config "${CONFIG}" \
         --flows $0 \
-        --histograms "${HISTOGRAMS_SCRATCH}/histograms.$(uuidgen).bin"
+        --output "${HISTOGRAMS_SCRATCH}/histograms.$(uuidgen).bin"
 '
 
 cat ${FEATURES_SCRATCH}/train*.csv > ${OUTPUT_DIR}/train.csv &
