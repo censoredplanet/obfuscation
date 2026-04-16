@@ -4,7 +4,7 @@ use hashbrown::HashMap;
 
 use crate::merge::*;
 use crate::quantization::PacketProjection;
-use crate::histograms::{Histogram, merge_histogram_vecs, Sequence};
+use crate::histograms::{Histogram, merge_histogram_vecs, Sequence, SequenceDisplay};
 
 #[derive(Debug)]
 pub struct Left;
@@ -127,7 +127,11 @@ impl Divergence {
         sorted_terms.sort_by(|(_, a), (_, b)| a.total_cmp(b));
         
         for (sequence, contribution) in sorted_terms {
-            println!("{} {}", sequence, contribution);
+            let sequence_display = SequenceDisplay {
+                sequence: sequence,
+                quantizer: None
+            };
+            println!("{} {}", sequence_display, contribution);
         }
     }
 }

@@ -21,7 +21,7 @@ pub enum Commands {
     #[command(name = "zeek2flows")]
     Zeek2Flows(Zeek2FlowsArgs),
     Stats(StatsCli),
-    Pipeline(PipelineArgs),
+    Pipeline(PipelineCli),
     Generate(GenerateArgs),
     Obfuscation(ObfuscationCli),
     Histograms(HistogramsCli),
@@ -131,46 +131,83 @@ pub struct Model {
     pub pseudocount: f64
 }
 
-// TODO: separate ML and KL model
 #[derive(Debug, serde::Deserialize)]
 pub struct PipelineConfig {
-    pub source_a: FlowSource,
-    pub source_b: Option<FlowSource>,
-    pub strip_tls_handshake: bool,
-    pub obfuscator: Option<ObfuscatorSpec>,
+    pub flow: FlowConfig,
     pub model: Model,
+    pub ml: Option<MLConfig>
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct FlowConfig {
+    pub source_a: FlowSource,
+    pub strip_tls_handshake: bool,
+    pub obfuscator: Option<ObfuscatorSpec>
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct MLConfig {
+    pub source_b: FlowSource,
     pub train_proportion: u8,
     pub features_packet_horizon: usize,
     pub raw_features: bool,
 }
 
+#[derive(Debug, Parser)]
+pub struct PipelineCli {
+    #[command(subcommand)]
+    pub command: PipelineCommand
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PipelineCommand {
+    Histograms(PipelineHistogramsArgs),
+    Ml(PipelineMlArgs)
+}
+
 #[derive(Debug, Args)]
-pub struct PipelineArgs {
+pub struct CommonPipelineArgs {
     #[arg(long)]
     pub config: PathBuf,
     #[arg(long)]
     pub flows: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+pub struct PipelineHistogramsArgs {
+    #[command(flatten)]
+    pub common: CommonPipelineArgs,
     /// Output path for histograms
     #[arg(long)]
-    pub histograms: PathBuf,
+    pub output: PathBuf,
+}
+
+#[derive(Debug, Args)]
+pub struct PipelineMlArgs {
+    #[command(flatten)]
+    pub common: CommonPipelineArgs,
     /// Output path for training data
-    #[arg(long, requires = "test_set")]
-    pub train_set: Option<PathBuf>,
+    #[arg(long)]
+    pub train_path: PathBuf,
     /// Output path for testing data
-    #[arg(long, requires = "train_set")]
-    pub test_set: Option<PathBuf>
+    #[arg(long)]
+    pub test_path: PathBuf,
+    #[arg(long)]
+    pub histograms: Option<PathBuf>
 }
 
 #[derive(Debug, Args)]
 pub struct GenerateArgs {
     #[arg(long)]
-    pub traffic_profile: String,
+    pub traffic_profile: PathBuf,
     #[arg(long)]
-    pub quantizer: String,
+    pub model: PathBuf,
     #[arg(long)]
-    pub length: usize,
+    pub num_flows: usize,
     #[arg(long)]
-    pub output: String
+    pub flow_length: usize,
+    #[arg(long)]
+    pub output: PathBuf
 }
 
 #[derive(Debug, serde::Deserialize, Clone)]
@@ -254,7 +291,9 @@ pub struct HistogramsDisplayArgs {
     #[arg(long)]
     pub min_probability: Option<f64>,
     #[arg(long)]
-    pub top_k: Option<usize>
+    pub top_k: Option<usize>,
+    #[arg(long)]
+    pub model: Option<PathBuf>
 }
 
 #[derive(Debug, Args)]
@@ -394,13 +433,13 @@ fn tls_version_comp(input: &mut &str) -> winnow::Result<FlowFilterPredicate> {
 }
 
 // Allow the --flows command line option to override whatever is in config
-pub fn resolve(config: &mut PipelineConfig, args: &PipelineArgs) {
-    if let FlowSource::Empirical { path, flow_filter: _ } = &mut config.source_a {
+pub fn resolve(config: &mut PipelineConfig, args: &CommonPipelineArgs) {
+    if let FlowSource::Empirical { path, flow_filter: _ } = &mut config.flow.source_a {
         let new_path = args.flows
             .as_ref()
             .cloned()
             .or(path.take())
-            .expect("missing flow source path");
+            .expect("Need to specify --flows on command line or [flows] in config file");
 
         *path = Some(new_path);
     }

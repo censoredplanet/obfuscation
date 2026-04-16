@@ -4,6 +4,7 @@ use serde::{Serialize, Deserialize};
 use enumflags2::{bitflags};
 
 use crate::base::MSS;
+use crate::quantization::FlowQuantizer;
 
 #[bitflags]
 #[repr(u8)]
@@ -73,7 +74,7 @@ pub trait EmitFeatures {
     type Value;
 
     fn id(&self) -> &Vec<u8>;
-    fn emit_features(&self, num_packets: usize, emitter: &mut dyn FeatureEmitter<Self::Value>);
+    fn emit_features(&self, num_packets: usize, quantizer: &FlowQuantizer, emitter: &mut dyn FeatureEmitter<Self::Value>);
 }
 
 pub trait FeatureEmitter<T> {

@@ -1,8 +1,10 @@
+use std::error::Error;
+
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
 use hashbrown::HashMap;
 
-use crate::base::Packet;
+use crate::base::{Flow, FlowMetadata, Packet, ProtocolMetadata};
 use crate::quantization::{FlowQuantizer, PacketProjection};
 use crate::histograms::{Sequence, Histogram};
 
@@ -47,7 +49,7 @@ pub trait PacketSource {
 #[derive(Debug)]
 pub struct Generator<'a, R: rand::Rng> {
     model: &'a [HashMap<Sequence<PacketProjection>, WeightedSampler<PacketProjection>>],
-    quantizer: FlowQuantizer,
+    quantizer: &'a FlowQuantizer,
     markov_order: u32,
     history: Vec<Packet>,
     emitted: usize,
@@ -59,7 +61,7 @@ pub struct Generator<'a, R: rand::Rng> {
 impl<'a, R: rand::Rng> Generator<'a, R> {
     pub fn new(
         model: &'a [HashMap<Sequence<PacketProjection>, WeightedSampler<PacketProjection>>],
-        quantizer: FlowQuantizer,
+        quantizer: &'a FlowQuantizer,
         markov_order: u32,
         length: usize,
         rng: R) -> Self
@@ -114,4 +116,60 @@ impl<'a, R: rand::Rng> Iterator for Generator<'a, R> {
     fn next(&mut self) -> Option<Self::Item> {
         PacketSource::next(self)
     }
+}
+
+pub fn generate_flow<R: rand::Rng>(
+    samplers: &[HashMap<Sequence<PacketProjection>, WeightedSampler<PacketProjection>>],
+    quantizer: &FlowQuantizer,
+    markov_order: u32,
+    flow_length: usize,
+    flow_id: Vec<u8>,
+    rng: R,
+) -> Result<Flow, Box<dyn Error>> {
+    if flow_length > samplers.len() {
+        return Err(format!(
+            "flow_length {} exceeds available packet-level distributions {}",
+            flow_length,
+            samplers.len()
+        ).into());
+    }
+
+    let generator = Generator::new(samplers, quantizer, markov_order, flow_length, rng);
+    let packets: Vec<Packet> = generator.collect();
+
+    Ok(Flow {
+        base: FlowMetadata {
+            conn_id: flow_id,
+            syn_ts: 0.0,
+            synack_ts: 0.0,
+            ack_ts: 0.0,
+            len: packets.len(),
+        },
+        proto: ProtocolMetadata::Raw,
+        packets,
+    })
+}
+
+pub fn generate_flows<R: rand::Rng>(
+    samplers: &[HashMap<Sequence<PacketProjection>, WeightedSampler<PacketProjection>>],
+    quantizer: &FlowQuantizer,
+    markov_order: u32,
+    num_flows: usize,
+    flow_length: usize,
+    mut rng: R,
+) -> Result<Vec<Flow>, Box<dyn Error>> {
+    let mut flows = Vec::with_capacity(num_flows);
+
+    for flow_index in 0..num_flows {
+        flows.push(generate_flow(
+            samplers,
+            quantizer,
+            markov_order,
+            flow_length,
+            format!("synthetic-flow-{flow_index:08}").into_bytes(),
+            &mut rng,
+        )?);
+    }
+
+    Ok(flows)
 }

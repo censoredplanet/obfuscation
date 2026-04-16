@@ -138,7 +138,8 @@ fn assign_to_split(flow_id: &[u8], hasher: &RandomState, train_proportion: u8) -
 
 pub fn write_flows_as_feature_vectors<'a, I, F>(
     flows: I, 
-    num_packets: usize, 
+    num_packets: usize,
+    quantizer: &FlowQuantizer, 
     train_path: &Path,
     test_path: &Path,
     train_proportion: u8) -> Result<(), Box<dyn Error>> 
@@ -172,7 +173,7 @@ where
             Label::Obfuscated => { emitter.push_label(1) }
         }
 
-        flow.emit_features(num_packets, &mut emitter);
+        flow.emit_features(num_packets, quantizer, &mut emitter);
         while emitter.record.len() < 2 * num_packets {
             emitter.push_feature(-1.0);
         }
@@ -185,31 +186,28 @@ where
     Ok(())
 }
 
-pub fn write_as_feature_vectors(flows: &[QuantizedFlow], quantization_scheme: &FlowQuantizer, num_packets: usize, path: &str) -> Result<(), Box<dyn Error>> {
+pub fn write_flows_to_csv<'a, I, F>(
+    flows: I, 
+    quantizer: &FlowQuantizer, 
+    flow_length: usize, 
+    path: &Path) -> Result<(), Box<dyn Error>> 
+where
+    I: IntoIterator<Item = &'a F>,
+    F: EmitFeatures<Value = f64> + 'a
+{
     let mut writer = csv::WriterBuilder::new()
                         .has_headers(false)
                         .from_path(path)?;
 
-    let num_features = quantization_scheme.min_features(num_packets);
-    
-    let mut feature_vector = Vec::with_capacity(num_features);
-    let mut record = csv::ByteRecord::new();
-    let mut buffer = itoa::Buffer::new();
+    let mut emitter = CsvEmitter::new();
 
-    for flow in flows.iter() {
-        flow.quantized.to_feature_vector(num_packets, &mut feature_vector);
-        feature_vector.extend(std::iter::repeat(-1).take(num_features - feature_vector.len()));
+    for flow in flows {
+        emitter.record.push_field(flow.id());
+        flow.emit_features(flow_length, quantizer, &mut emitter);
 
-        record.push_field(flow.conn_id);
+        writer.write_byte_record(&emitter.record)?;
 
-        for feature in feature_vector.iter() {
-            record.push_field(buffer.format(*feature).as_bytes());
-        }
-
-        writer.write_byte_record(&record)?;
-
-        feature_vector.clear();
-        record.clear();
+        emitter.clear();
     }
     
     Ok(())
@@ -253,9 +251,10 @@ fn preprocess(flows: &mut [Flow], strip: bool) -> () {
 }
 
 fn prepare_flows(config: &PipelineConfig) -> Result<(Vec<Flow>, Option<Vec<Flow>>), Box<dyn std::error::Error>> {
-    let (mut flows_a, mut flows_b) = materialize_sources(&config.source_a, config.source_b.as_ref())?;
+    let source_b = config.ml.as_ref().map(|ml_config| ml_config.source_b.clone());
+    let (mut flows_a, mut flows_b) = materialize_sources(&config.flow.source_a, source_b.as_ref())?;
 
-    let obfuscator = config.obfuscator
+    let obfuscator = config.flow.obfuscator
         .as_ref()
         .map(|cfg| {
             match &cfg {
@@ -279,9 +278,9 @@ fn prepare_flows(config: &PipelineConfig) -> Result<(Vec<Flow>, Option<Vec<Flow>
         }
     }
 
-    preprocess(&mut flows_a, config.strip_tls_handshake);
+    preprocess(&mut flows_a, config.flow.strip_tls_handshake);
     if let Some(b) = flows_b.as_mut() {
-        preprocess(b, config.strip_tls_handshake);
+        preprocess(b, config.flow.strip_tls_handshake);
     }
 
     Ok((flows_a, flows_b))
@@ -296,10 +295,11 @@ fn build_model(flows: &[Flow], quantizer: &FlowQuantizer, markov_order: u32, alp
             |accumulator, traffic_profile| accumulator.merge(traffic_profile))
 }
 
-fn run_ml_pipeline(
+fn shuffle_and_write_feature_vectors(
     flows_a: &[Flow], 
-    flows_b: &[Flow], 
-    config: &PipelineConfig, 
+    flows_b: &[Flow],
+    model: &ModelAssumptions, 
+    config: &MLConfig, 
     train_path: &Path,
     test_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -311,37 +311,54 @@ fn run_ml_pipeline(
     write_flows_as_feature_vectors(
         shuffler, 
         config.features_packet_horizon, 
+        &model.quantizer,
         &train_path,
         &test_path,
         config.train_proportion)
 }
 
-pub fn run_pipeline(config: PipelineConfig, args: PipelineArgs) -> Result<(), Box<dyn std::error::Error>> {
-    //println!("{:#?}", args);
+fn build_and_write_histograms(flows_a: &[Flow], flows_b: Option<&[Flow]>, config: &PipelineConfig, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let model_assumptions = serde_json::from_slice::<ModelAssumptions>(&std::fs::read(&config.model.model_assumptions)?)?;
+    let target_flows = flows_b.unwrap_or(flows_a);
+    let histograms = build_model(target_flows, &model_assumptions.quantizer, model_assumptions.markov_order, config.model.pseudocount);
+    histograms.write(output)
+}
 
+pub fn run_histograms_pipeline(config: PipelineConfig, args: PipelineHistogramsArgs) -> Result<(), Box<dyn std::error::Error>> {
     let now = SystemTime::now();
+    let (flows_a, flows_b) = prepare_flows(&config)?;
+    println!("Preprocessing finished at {}s", now.elapsed()?.as_secs());
+    build_and_write_histograms(&flows_a, flows_b.as_deref(), &config, &args.output)?;
+    println!("Done at {}s", now.elapsed()?.as_secs());
+    Ok(())
+}
+
+pub fn run_ml_pipeline(config: PipelineConfig, args: PipelineMlArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let now = SystemTime::now();
+
+    let model_assumptions = serde_json::from_slice::<ModelAssumptions>(&std::fs::read(&config.model.model_assumptions)?)?;
+    let ml_config = config.ml.as_ref().expect("ml config required");
 
     let (flows_a, flows_b) = prepare_flows(&config)?;
     println!("Preprocessing finished at {}s", now.elapsed()?.as_secs());
+    shuffle_and_write_feature_vectors(&flows_a, flows_b.as_ref().unwrap(), &model_assumptions, &ml_config, &args.train_path, &args.test_path)?;
+    println!("Writing features finished at {}s", now.elapsed()?.as_secs());
 
-    if let Some(train_path) = args.train_set && 
-        let Some(test_path) = args.test_set &&
-        config.raw_features 
-    {
-        run_ml_pipeline(&flows_a, flows_b.as_ref().unwrap(), &config, &train_path, &test_path)?;
-        println!("Writing features finished at {}s", now.elapsed()?.as_secs());
+    if let Some(ref histograms_path) = args.histograms {
+        build_and_write_histograms(&flows_a, flows_b.as_deref(), &config, histograms_path)?;
+        println!("Histograms finished at {}s", now.elapsed()?.as_secs());
     }
-
-    let target_flows = flows_b.as_ref().unwrap_or(&flows_a);
- 
-    let model_assumptions = serde_json::from_slice::<ModelAssumptions>(&std::fs::read(config.model.model_assumptions)?)?;
-    let histograms = build_model(target_flows, &model_assumptions.quantizer, model_assumptions.markov_order, config.model.pseudocount);
-    println!("Histograms finished at {}s", now.elapsed()?.as_secs());
-    histograms.write(&args.histograms)?;
-
     println!("Done at {}s", now.elapsed()?.as_secs());
 
     Ok(())
+}
+
+fn load_pipeline_config(common: &CommonPipelineArgs) -> Result<PipelineConfig, Box<dyn std::error::Error>> {
+    let content = std::fs::read_to_string(&common.config)?;
+    let mut config: PipelineConfig = toml::from_str(&content)?;
+    resolve(&mut config, common);
+    println!("{:#?}", config);
+    Ok(config)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -407,16 +424,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
         },
-        Commands::Pipeline(args) => {
-            let content = std::fs::read_to_string(&args.config)?;
-            let mut config: PipelineConfig = toml::from_str(&content)?;
-            resolve(&mut config, &args);
-            println!("{:#?}", config);
-            run_pipeline(config, args)?
+        Commands::Pipeline(pipeline_cli) => {
+            match pipeline_cli.command {
+                PipelineCommand::Histograms(args) => run_histograms_pipeline(load_pipeline_config(&args.common)?, args)?,
+                PipelineCommand::Ml(args) => run_ml_pipeline(load_pipeline_config(&args.common)?, args)?
+            }
         }
         Commands::Generate(args) => {
-            let traffic_profile = TrafficProfile::from_file(Path::new(&args.traffic_profile))?;
-            let quantizer = serde_json::from_slice::<FlowQuantizer>(&std::fs::read(args.quantizer)?)?;
+            let traffic_profile = TrafficProfile::from_file(&args.traffic_profile)?;
+            let model_assumptions = serde_json::from_slice::<ModelAssumptions>(&std::fs::read(args.model)?)?;
+
+            if traffic_profile.markov_order != model_assumptions.markov_order {
+                return Err(format!(
+                    "traffic profile markov_order ({}) does not match model assumptions markov_order ({})",
+                    traffic_profile.markov_order,
+                    model_assumptions.markov_order
+                ).into());
+            }
 
             let samplers = traffic_profile.profile.iter()
                 .map(|histogram| {
@@ -427,11 +451,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .collect::<HashMap<_, _>>()
                 })
                 .collect::<Vec<_>>();
+
+            let flows = generate_flows(
+                &samplers,
+                &model_assumptions.quantizer,
+                traffic_profile.markov_order,
+                args.num_flows,
+                args.flow_length,
+                rand::rng(),
+            )?;
             
-            let generator = Generator::new(&samplers, quantizer, traffic_profile.markov_order, args.length, rand::rng());
-            for packet in generator {
-                println!("{:#?}", packet);
-            }
+            write_flows_to_csv(&flows, &model_assumptions.quantizer, args.flow_length, &args.output)?;
         }
         Commands::Obfuscation(obfuscation_cli) => {
             match obfuscation_cli.command {
@@ -445,13 +475,21 @@ fn main() -> Result<(), Box<dyn Error>> {
             match histograms_cli.command {
                 HistogramsCommands::Display(args) => {
                     let histograms = Vec::<Histogram<PacketProjection>>::from_file(Path::new(&args.input))?;
-                    let view = HistogramViewBuilder::new()
+                    let mut view = HistogramViewBuilder::new()
                         .min_count(args.min_count)
                         .min_probability(args.min_probability) 
                         .top_k(args.top_k)
                         .from_histogram(&histograms[args.index]);
                     
-                    println!("{}", view);
+                    if let Some(model) = args.model {
+                        let model = serde_json::from_slice::<ModelAssumptions>(&std::fs::read(model)?)?;
+                        let packet_quantizer = model.quantizer.quantizer_at(args.index);
+                        view = view.with_quantizer(packet_quantizer);
+                        println!("{}", view);
+                    }
+                    else {
+                        println!("{}", view);
+                    }
                 }
                 HistogramsCommands::Divergence(args) => {
                     let left = TrafficProfile::from_file(&args.left)?;

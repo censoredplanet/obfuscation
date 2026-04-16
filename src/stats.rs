@@ -20,6 +20,9 @@ pub struct FeatureStats {
     pub min: f64,
     pub max: f64,
     pub tdigest: TDigest,
+    // This is only needed for size, putting here for now
+    // to avoid code refactoring.
+    pub frequencies: Vec<usize>,
     #[serde(skip)]
     buffer: Vec<f64>,
 }
@@ -27,6 +30,10 @@ pub struct FeatureStats {
 impl FeatureStats {
     pub fn update(&mut self, value: f64) {
         self.count += 1;
+
+        if let Some(count) = self.frequencies.get_mut(value.round() as usize) {
+            *count += 1;
+        }
 
         let delta = value - self.mean;
         self.mean += delta / self.count as f64;
@@ -75,6 +82,7 @@ impl Default for FeatureStats {
             min: f64::INFINITY,
             max: f64::NEG_INFINITY,
             tdigest: TDigest::new_with_size(100),
+            frequencies: Vec::with_capacity(FeatureKind::Size.domain().max as usize),
             buffer: Vec::with_capacity(TDIGEST_BUFFER_SIZE)
         }
     }
@@ -109,6 +117,10 @@ impl Merge for FeatureStats {
 
         self.min = self.min.min(other.min);
         self.max = self.max.max(other.max);
+
+        self.frequencies.iter_mut()
+            .zip(other.frequencies.iter())
+            .for_each(|(a, b)| *a += b);
 
         self.tdigest = TDigest::merge_digests(vec![self.tdigest.clone(), other.tdigest.clone()]);
         self.buffer.extend_from_slice(&other.buffer);
@@ -255,99 +267,68 @@ pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, mar
     let mut quantizers: Vec<PacketQuantizer> = Vec::with_capacity(max_len);
     
     for i in 0..max_len {
-        let mut feature_bins = Vec::<(BoundedFeature, u32)>::new();
         let mut packet_quantizer = PacketQuantizer::default();
-        let mut n = 0;
+        
+        let n = feature_mask.iter()
+            .filter_map(|f| traffic_stats.stats.get(&f).and_then(|v| v.get(i)))
+            .map(|s| s.count)
+            .min()
+            .unwrap_or(0);
+        let outcome_budget = bins_from_sample_complexity(n, epsilon, delta);
+        let mut remaining = (outcome_budget as f64).powf(1.0 / (markov_order.min(i as u32) + 1) as f64).floor() as u32;
 
-        for feature in feature_mask.iter() {
-            if let Some(stats) = traffic_stats.stats
-                .get(&feature)
-                .and_then(|v| v.get(i))
-            {
-                // should be identical across features, but enforce in future
-                n = stats.count;
+        println!("Index {} | n = {} | k = {}", i, n, outcome_budget);
 
-                let bounded_feature = match feature {
-                    FeatureKind::Timestamp => {
-                        let effective_min = stats.tdigest.estimate_quantile(0.01).max(feature.domain().min);
-                        let effective_max = stats.tdigest.estimate_quantile(0.99).min(feature.domain().max);
+        if feature_mask.contains(FeatureKind::Direction) {
+            remaining /= 2;
+            packet_quantizer.set_feature_quantizer(
+                FeatureQuantizer::identity(BoundedFeature::new(FeatureKind::Direction))
+            );
+            println!("\t{:#?}) nbins: {}", FeatureKind::Direction, 2);
+        }
 
-                        BoundedFeature::new_with_bounds(
-                            feature.clone(),
-                            Some(effective_min),
-                            Some(effective_max),
-                        )
-                    }
-                    _ => BoundedFeature::new(feature.clone()),
+        let mut size_bins = 1;
+        if feature_mask.contains(FeatureKind::Size) {
+            if let Some(stats) = traffic_stats.stats.get(&FeatureKind::Size).and_then(|v| v.get(i)) {
+                let feature = BoundedFeature::new(FeatureKind::Size);
+                let fd = freedman_diaconis_rule(&feature, n, stats.iqr());
+                size_bins = if remaining > 1460 { fd.min(1460) } else { fd.min(remaining.isqrt()) };
+
+                let quantizer = if size_bins < 1460 {
+                    FeatureQuantizer::maxdiff(feature, &stats.frequencies, size_bins)
+                }
+                else {
+                    FeatureQuantizer::identity(feature)
                 };
 
-                let proposed_bins = propose_feature_bins(&bounded_feature, stats);
-                feature_bins.push((bounded_feature, proposed_bins));
+                packet_quantizer.set_feature_quantizer(quantizer);
+                println!("\t{:#?}) nbins: {}", FeatureKind::Size, size_bins);
             }
         }
 
-        let outcome_budget = bins_from_sample_complexity(n, epsilon, delta);
+        if feature_mask.contains(FeatureKind::Timestamp) {
+            if let Some(stats) = traffic_stats.stats.get(&FeatureKind::Timestamp).and_then(|v| v.get(i)) {
+                let effective_min = stats.tdigest.estimate_quantile(0.01).max(FeatureKind::Timestamp.domain().min);
+                let effective_max = stats.tdigest.estimate_quantile(0.99).min(FeatureKind::Timestamp.domain().max);
+                let bounded = BoundedFeature::new_with_bounds(FeatureKind::Timestamp, Some(effective_min), Some(effective_max));
 
-        greedy_shrink_bins(&mut feature_bins, outcome_budget, markov_order);
+                let time_bins = freedman_diaconis_rule(&bounded, n, stats.iqr()).min(remaining / size_bins);
 
-        println!("Index {} | N = {} | k = {}", i, n, outcome_budget);
-        for (feature, num_bins) in feature_bins.into_iter() {
-            let feature_quantizer = match feature.feature() {
-                FeatureKind::Direction => FeatureQuantizer::identity(feature),
-                _ => FeatureQuantizer::uniform_bounded(feature, num_bins)
-            };
-            println!("\t{:#?}) nbins: {} | bin_width: {} | lower: {} | upper: {}", 
-                &feature_quantizer.feature.feature(),
-                &feature_quantizer.num_bins(), 
-                &feature_quantizer.bin_width(),
-                &feature_quantizer.feature.effective_min(),
-                &feature_quantizer.feature.effective_max()
-            );
-            packet_quantizer.set_feature_quantizer(feature_quantizer);
+                packet_quantizer.set_feature_quantizer(FeatureQuantizer::log_uniform_bounded(bounded, time_bins));
+                println!("\t{:#?}) nbins: {} | lower: {} | upper: {}", FeatureKind::Timestamp, time_bins, effective_min, effective_max);
+            }
         }
+
+        assert!(
+            packet_quantizer.timestamp.num_bins() *
+            packet_quantizer.direction.num_bins() *
+            packet_quantizer.size.num_bins()
+            <= outcome_budget, "exceeded outcome budget");
 
         quantizers.push(packet_quantizer);
     }
 
     quantizers
-}
-
-pub fn propose_feature_bins(feature: &BoundedFeature, stats: &FeatureStats) -> u32 {
-    match feature.feature() {
-        FeatureKind::Timestamp | FeatureKind::Entropy => freedman_diaconis_rule(&feature, stats.count, stats.iqr()),
-        FeatureKind::Size => freedman_diaconis_rule(&feature, stats.count, stats.iqr()).max(feature.domain_size() as u32),
-        FeatureKind::Direction => feature.domain_size() as u32
-    }
-}
-
-pub fn greedy_shrink_bins(
-    feature_bins: &mut Vec<(BoundedFeature, u32)>,
-    outcome_budget: usize,
-    markov_order: u32) 
-{
-    loop {
-        let num_outcomes = (feature_bins
-            .iter()
-            .map(|(_, k)| *k as usize)
-            .product::<usize>()).pow(markov_order + 1);
-
-        if num_outcomes <= outcome_budget {
-            break;
-        }
-
-        // Find feature with largest K > 1
-        if let Some((_, k)) = feature_bins
-            .iter_mut()
-            .filter(|(_, k)| *k > 1)
-            .max_by_key(|(_, k)| *k)
-        {
-            *k -= 1;
-        } 
-        else {
-            // All bins have size 1, cannot shrink further
-            break;
-        }
-    }
 }
 
 // TODO: instead of assertion, return Result so can create stats up to furthest possible packet index

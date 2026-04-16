@@ -1,6 +1,9 @@
 use std::fmt;
 use std::hash::Hash;
 
+use rand::distr::Distribution;
+use rand::distr::weighted::WeightedIndex;
+
 use rayon::prelude::*;
 use rv::prelude::*;
 
@@ -54,11 +57,34 @@ impl PacketProjection {
     }
 }
 
-impl fmt::Display for PacketProjection {
+pub struct PacketProjectionDisplay<'a> {
+    pub projection: &'a PacketProjection,
+    pub quantizer: Option<&'a PacketQuantizer>,
+}
+
+impl fmt::Display for PacketProjectionDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[t={} d={} s={} e={}]", self.timestamp, self.direction, self.size, self.entropy)
+        let feature_as_interval_str = |bin: &FeatureValue, quantizer: &FeatureQuantizer| {
+            match bin {
+                FeatureValue::Masked => "".to_string(),
+                FeatureValue::Bin(idx) => quantizer.bin_to_interval(*idx)
+            }
+        };
+
+        if let Some(q) = self.quantizer {
+            write!(f, "[t={}:{} d={}:{} s={}:{} e={}:{}]",
+                self.projection.timestamp, feature_as_interval_str(&self.projection.timestamp, &q.timestamp),
+                self.projection.direction, feature_as_interval_str(&self.projection.direction, &q.direction),
+                self.projection.size, feature_as_interval_str(&self.projection.size, &q.size),
+                self.projection.entropy, feature_as_interval_str(&self.projection.entropy, &q.entropy),
+            )
+        }
+        else {
+            write!(f, "[t={} d={} s={} e={}]", self.projection.timestamp, self.projection.direction, self.projection.size, self.projection.entropy)
+        }
     }
 }
+
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct QuantizedPacketSequence {
@@ -152,10 +178,36 @@ impl BoundedFeature {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Bin {
+    values: Vec<usize>,
+    counts: Vec<usize>
+}
+
+impl Bin {
+    pub fn sample<R: rand::Rng>(&self, rng: &mut R) -> f64 {
+        let weighted_index = WeightedIndex::new(&self.counts).unwrap();
+        self.values[weighted_index.sample(rng)] as f64
+    }
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum Quantization {
     Mask,
     Identity,
     Uniform { inv_width: f64 },
+    LogUniform { inv_log_width: f64 },
+    Empirical {
+        lookup: Vec<u32>,
+        bins: Vec<Bin>,
+    }
+}
+
+fn log_transform(value: f64) -> f64 {
+    value.ln_1p()
+}
+
+fn log_inverse(value: f64) -> f64 {
+    value.exp_m1()
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -198,26 +250,88 @@ impl FeatureQuantizer {
         }
     }
 
-    pub fn num_bins(&self) -> usize {
-        match self.quantization {
-            Quantization::Mask => 1,
-            Quantization::Identity => (self.feature.effective_max() - self.feature.effective_min()) as usize,
-            Quantization::Uniform { inv_width } => ((self.feature.domain_size() * inv_width).round() as usize).max(1)
+    pub fn log_uniform_bounded(feature: BoundedFeature, bins: u32) -> Self {
+        assert!(bins > 0, "Bins must be > 0");
+        assert!(feature.effective_min() >= 0.0, "Log quantization requires non-negative values");
+
+        let width = log_transform(feature.effective_max()) - log_transform(feature.effective_min());
+        let inv_log_width = if width > 0.0 {
+            bins as f64 / width
+        } else {
+            0.0
+        };
+
+        Self {
+            feature: feature,
+            quantization: Quantization::LogUniform { inv_log_width: inv_log_width }
         }
     }
 
-    pub fn bin_width(&self) -> f64 {
-        match self.quantization {
-            Quantization::Mask => 0.0,
-            Quantization::Identity => 1.0,
-            Quantization::Uniform { inv_width } => if inv_width > 0.0 { 1.0 / inv_width } else { 0.0 }
+    // MaxDiff histograms are built such that bins - 1 boundaries are placed between values
+    // with the largest absolute differences between them. This is designed to prevent values
+    // with vastly different frequencies from being binned together.
+    pub fn maxdiff(feature: BoundedFeature, frequencies: &[usize], bins: u32) -> Self {
+        let mut diffs: Vec<(usize, isize)> = frequencies.windows(2)
+            .enumerate()
+            .map(|(i, w)| (i + 1, (w[1] as isize - w[0] as isize).abs()))
+            .collect();
+
+        diffs.sort_unstable_by(|(_, a), (_, b)| b.cmp(a));
+
+        let mut boundaries: Vec<usize> = diffs.iter()
+            .take((bins - 1) as usize)
+            .map(|(i, _)| *i)
+            .collect();
+        boundaries.sort_unstable();
+
+        let mut lookup = vec![0u32; feature.domain_size() as usize];
+        let mut bin_vec: Vec<Bin> = Vec::with_capacity(bins as usize);
+
+        let segment_starts = std::iter::once(0)
+            .chain(boundaries.iter().copied())
+            .collect::<Vec<_>>();
+        let segment_ends = boundaries.iter().copied()
+            .chain(std::iter::once(frequencies.len()))
+            .collect::<Vec<_>>();
+
+        for (bin_idx, (&start, &end)) in segment_starts.iter().zip(segment_ends.iter()).enumerate() {
+            let mut values = Vec::new();
+            let mut counts = Vec::new();
+
+            for i in start..end {
+                if frequencies[i] > 0 {
+                    values.push(i);
+                    counts.push(frequencies[i]);
+                }
+                lookup[i] = bin_idx as u32;
+            }
+
+            bin_vec.push(Bin { values, counts });
+        }
+
+        Self {
+            feature,
+            quantization: Quantization::Empirical { lookup, bins: bin_vec }
+        }
+    }
+
+    pub fn num_bins(&self) -> usize {
+        match &self.quantization {
+            Quantization::Mask => 1,
+            Quantization::Identity => (self.feature.effective_max() - self.feature.effective_min()) as usize,
+            Quantization::Uniform { inv_width } => ((self.feature.domain_size() * inv_width).round() as usize).max(1),
+            Quantization::LogUniform { inv_log_width } => {
+                let log_domain = log_transform(self.feature.effective_max()) - log_transform(self.feature.effective_min());
+                ((log_domain * inv_log_width).round() as usize).max(1)
+            },
+            Quantization::Empirical { lookup: _, bins } => bins.len()
         }
     }
 
     pub fn quantize_feature(&self, value: f64) -> FeatureValue {
         assert!(self.feature.min() <= value && value <= self.feature.max(), "Value {} out of range [{}, {}].", value, self.feature.min(), self.feature.max());
 
-        match self.quantization {
+        match &self.quantization {
             Quantization::Mask => FeatureValue::Masked,
             Quantization::Identity => FeatureValue::Bin(value as u32),
             Quantization::Uniform { inv_width } => {
@@ -226,7 +340,16 @@ impl FeatureQuantizer {
                     .min(self.feature.effective_max());
                 let idx = ((clamped - self.feature.effective_min()) * inv_width).floor() as i64;
                 FeatureValue::Bin(idx.clamp(0, self.num_bins() as i64 - 1) as u32)
-            }
+            },
+            Quantization::LogUniform { inv_log_width } => {
+                let clamped = value
+                    .max(self.feature.effective_min())
+                    .min(self.feature.effective_max());
+                let log_min = log_transform(self.feature.effective_min());
+                let idx = ((log_transform(clamped) - log_min) * inv_log_width).floor() as i64;
+                FeatureValue::Bin(idx.clamp(0, self.num_bins() as i64 - 1) as u32)
+            },
+            Quantization::Empirical { lookup, bins: _ } => FeatureValue::Bin(lookup[value as usize])
         }
     }
 
@@ -244,15 +367,60 @@ impl FeatureQuantizer {
             }
         };
 
-        match self.quantization {
+        let bin = feature.to_i64();
+
+        match &self.quantization {
             Quantization::Mask => sample_interval(self.feature.effective_min(), self.feature.effective_max()),
-            Quantization::Identity => feature.to_i64() as f64,
-            Quantization::Uniform { .. } => {
-                let bin = feature.to_i64();
-                let lo = self.feature.effective_min() + bin as f64 * self.bin_width();
-                let hi = (lo + self.bin_width()).min(self.feature.effective_max());
+            Quantization::Identity => bin as f64,
+            Quantization::Uniform { inv_width } => {
+                let bin_width = 1.0 / inv_width;
+                let lo = self.feature.effective_min() + bin as f64 * bin_width;
+                let hi = (lo + bin_width).min(self.feature.effective_max());
 
                 sample_interval(lo, hi)
+            },
+            Quantization::LogUniform { inv_log_width } => {
+                let log_bin_width = 1.0 / inv_log_width;
+                let log_min = log_transform(self.feature.effective_min());
+                let log_max = log_transform(self.feature.effective_max());
+                let lo = log_min + bin as f64 * log_bin_width;
+                let hi = (lo + log_bin_width).min(log_max);
+                let sample = if lo < hi { Uniform::new(lo, hi).unwrap().draw(rng) } else { lo };
+
+                log_inverse(sample)
+                    .max(self.feature.effective_min())
+                    .min(self.feature.effective_max())
+            },
+            Quantization::Empirical { lookup: _, bins } => bins[bin as usize].sample(rng)
+        }
+    }
+
+    fn bin_to_interval(&self, bin_idx: u32) -> String {
+        match &self.quantization {
+            Quantization::Mask => format!("[{}, {})", self.feature.effective_min(), self.feature.effective_max()),
+            Quantization::Identity => {
+                let v = bin_idx as f64 + self.feature.effective_min();
+                format!("[{}, {}]", v, v)
+            }
+            Quantization::Uniform { inv_width } => {
+                let bin_width = 1.0 / inv_width;
+                let lo = self.feature.effective_min() + bin_idx as f64 * bin_width;
+                let hi = (lo + bin_width).min(self.feature.effective_max());
+                format!("[{}, {})", lo, hi)
+            }
+            Quantization::LogUniform { inv_log_width } => {
+                let log_bin_width = 1.0 / inv_log_width;
+                let log_min = log_transform(self.feature.effective_min());
+                let lo = log_inverse(log_min + bin_idx as f64 * log_bin_width);
+                let hi = log_inverse(log_min + (bin_idx + 1) as f64 * log_bin_width)
+                    .min(self.feature.effective_max());
+                format!("[{}, {})", lo, hi)
+            }
+            Quantization::Empirical { lookup: _, bins } => {
+                let bin = &bins[bin_idx as usize];
+                let lo = bin.values.first().copied().unwrap_or(0);
+                let hi = bin.values.last().copied().unwrap_or(0);
+                format!("[{}, {}]", lo, hi)
             }
         }
     }

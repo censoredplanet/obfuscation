@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use hashbrown::HashMap;
 
+use crate::quantization::{PacketProjection, PacketProjectionDisplay, PacketQuantizer};
 use crate::merge::{Merge, PostcardIO};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, std::hash::Hash)]
@@ -34,14 +35,23 @@ impl<T> From<Vec<T>> for Sequence<T> {
     }
 }
 
-impl<T: fmt::Display + Clone> fmt::Display for Sequence<T> {
+pub struct SequenceDisplay<'a, T: Clone> {
+    pub sequence: &'a Sequence<T>,
+    pub quantizer: Option<&'a PacketQuantizer>,
+}
+
+impl fmt::Display for SequenceDisplay<'_, PacketProjection> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "<")?;
-        for (idx, element) in self.sequence.iter().enumerate() {
+        for (idx, packet) in self.sequence.sequence.iter().enumerate() {
             if idx > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", element)?;
+            let packet_projection = PacketProjectionDisplay {
+                projection: &packet,
+                quantizer: self.quantizer
+            };
+            write!(f, "{}", packet_projection)?;
         }
         write!(f, ">")
     }
@@ -242,7 +252,8 @@ impl HistogramViewBuilder {
     {
         HistogramView {
             config: self,
-            histogram: histogram
+            histogram: histogram,
+            quantizer: None
         }
     }
 }
@@ -250,10 +261,16 @@ impl HistogramViewBuilder {
 #[derive(Debug)]
 pub struct HistogramView<'a, K: Eq + std::hash::Hash + Clone> {
     config: HistogramViewBuilder,
-    histogram: &'a Histogram<K>
+    histogram: &'a Histogram<K>,
+    quantizer: Option<&'a PacketQuantizer>
 }
 
 impl<'a, K: Eq + std::hash::Hash + Clone> HistogramView<'a, K> {
+    pub fn with_quantizer(mut self, quantizer: &'a PacketQuantizer) -> Self {
+        self.quantizer = Some(quantizer);
+        self
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&Sequence<K>, &usize)> {
         let total = self.histogram.total;
 
@@ -277,12 +294,16 @@ impl<'a, K: Eq + std::hash::Hash + Clone> HistogramView<'a, K> {
     }
 }
 
-impl<'a, K: serde::Serialize + Eq + std::hash::Hash + Clone + fmt::Display> fmt::Display for HistogramView<'a, K> {
+impl<'a> fmt::Display for HistogramView<'a, PacketProjection> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "{:<10}\t{:<12}\t{}", "Count", "Prob", "Sequence")?;
         for (key, &count) in self.iter() {
             let probability = (count as f64) / (self.histogram.total as f64);
-            writeln!(f, "{:<10}\t{:<12.4}\t{}", count, probability, key)?;
+            let sequence_display = SequenceDisplay {
+                sequence: &key,
+                quantizer: self.quantizer
+            };
+            writeln!(f, "{:<10}\t{:<12.4}\t{}", count, probability, sequence_display)?;
         }
 
         writeln!(f, "[Support Size: {} | # Observations: {}]", self.histogram.support_size(), self.histogram.total)?;

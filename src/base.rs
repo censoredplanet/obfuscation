@@ -8,6 +8,7 @@ use zstd::stream::read::Decoder;
 
 use crate::merge::PostcardIO;
 use crate::feature::{FeatureKind, EmitFeatures, FeatureEmitter};
+use crate::quantization::{Quantization, FlowQuantizer};
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub struct Packet {
@@ -85,14 +86,17 @@ impl Flow {
         let client_to_observer = (self.base.ack_ts - self.base.synack_ts) / 2.0;
         let rtt = (self.base.synack_ts - self.base.syn_ts) + (2.0 * client_to_observer);
 
-        let mut prev_ts: Option<f64> = None;
+        let mut prev_c2s_ts = None;
+        let mut prev_s2c_ts = None;
         for packet in self.packets.iter_mut() {
-            let iat = match prev_ts {
+            let prev_ts = if packet.direction > 0.5 { &mut prev_c2s_ts } else { &mut prev_s2c_ts };
+    
+            let iat = match *prev_ts {
                 None => 0.0,
                 Some(ts) => packet.timestamp - ts,
             };
 
-            prev_ts = Some(packet.timestamp);
+            *prev_ts = Some(packet.timestamp);
 
             packet.timestamp = iat / rtt;
         }
@@ -114,10 +118,28 @@ impl EmitFeatures for Flow {
         &self.base.conn_id
     }
 
-    fn emit_features(&self, num_packets: usize, emitter: &mut dyn FeatureEmitter<f64>) {
-        for packet in self.packets.iter().take(num_packets) {
-            emitter.push_feature(packet.timestamp);
-            emitter.push_feature(if packet.direction > 0.5 { packet.size } else { -packet.size });
+    // In the future we don't need the full quantizer, just a feature mask
+    fn emit_features(&self, num_packets: usize, quantizer: &FlowQuantizer, emitter: &mut dyn FeatureEmitter<f64>) {
+        for (i, packet) in self.packets.iter().take(num_packets).enumerate() {
+            let packet_quantizer = quantizer.quantizer_at(i);
+
+            let timestamp_masked = matches!(packet_quantizer.timestamp.quantization, Quantization::Mask);
+            let direction_masked = matches!(packet_quantizer.direction.quantization, Quantization::Mask);
+            let size_masked = matches!(packet_quantizer.size.quantization, Quantization::Mask);
+
+            if !timestamp_masked {
+                emitter.push_feature(packet.timestamp);
+            }
+
+            if !size_masked {
+                let size = if direction_masked || packet.direction > 0.5 {
+                    packet.size
+                } else {
+                    -packet.size
+                };
+
+                emitter.push_feature(size);
+            }
         }
     }
 }
