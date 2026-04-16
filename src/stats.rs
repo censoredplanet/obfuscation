@@ -71,6 +71,26 @@ impl FeatureStats {
     pub fn iqr(&self) -> f64 {
         self.tdigest.estimate_quantile(0.75) - self.tdigest.estimate_quantile(0.25)
     }
+
+    pub fn iqr2(&self) -> f64 {
+        let quantile = |q: f64| -> usize {
+            assert!(q <= 1.0, "quantile must be less than 1");
+            let threshold = (self.count as f64 * q) as usize;
+            let mut cumsum = 0;
+            for (i, frequency) in self.frequencies.iter().enumerate() {
+                cumsum += frequency;
+                if cumsum >= threshold {
+                    return i + 1;
+                }
+            }
+            self.frequencies.len()
+        };
+        
+        let q1 = quantile(0.25);
+        let q3 = quantile(0.75);
+
+        (q3 - q1) as f64
+    }
 }
 
 impl Default for FeatureStats {
@@ -292,7 +312,16 @@ pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, mar
             if let Some(stats) = traffic_stats.stats.get(&FeatureKind::Size).and_then(|v| v.get(i)) {
                 let feature = BoundedFeature::new(FeatureKind::Size);
                 let fd = freedman_diaconis_rule(&feature, n, stats.iqr());
-                size_bins = if remaining > 1460 { fd.min(1460) } else { fd.min(remaining.isqrt()) };
+                
+                size_bins = if remaining > 1460 {
+                    println!("Freedman-Diaconis rule proposed {}, falling back to 1460", fd);
+                    fd.min(1460) 
+                } 
+                else {
+                    let bins = fd.min(remaining).max(remaining.isqrt());
+                    println!("Freedman-Diaconis rule proposed {} but using {}", fd, bins);
+                    bins 
+                };
 
                 let quantizer = if size_bins < 1460 {
                     FeatureQuantizer::maxdiff(feature, &stats.frequencies, size_bins)
