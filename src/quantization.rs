@@ -300,7 +300,7 @@ impl FeatureQuantizer {
 
             for i in start..end {
                 if frequencies[i] > 0 {
-                    values.push(i);
+                    values.push(i + 1);
                     counts.push(frequencies[i]);
                 }
                 lookup[i] = bin_idx as u32;
