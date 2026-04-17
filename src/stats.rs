@@ -31,7 +31,7 @@ impl FeatureStats {
     pub fn update(&mut self, value: f64) {
         self.count += 1;
 
-        if value > 0.0 {
+        if value as usize > 0 && value as usize <= 1460 {
             self.frequencies[value as usize - 1] += 1;
         }
 
