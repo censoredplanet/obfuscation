@@ -10,7 +10,7 @@ use crate::base::Flow;
 use crate::feature::{FeatureKind};
 use crate::quantization::{BoundedFeature, FeatureQuantizer, PacketQuantizer};
 
-const TDIGEST_BUFFER_SIZE: usize = 1024;
+const TDIGEST_BUFFER_SIZE: usize = 4096;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct FeatureStats {
@@ -102,7 +102,7 @@ impl Default for FeatureStats {
             min: f64::INFINITY,
             max: f64::NEG_INFINITY,
             tdigest: TDigest::new_with_size(100),
-            frequencies: Vec::with_capacity(FeatureKind::Size.domain().max as usize),
+            frequencies: vec![0; FeatureKind::Size.domain().max as usize],
             buffer: Vec::with_capacity(TDIGEST_BUFFER_SIZE)
         }
     }
@@ -118,6 +118,7 @@ impl fmt::Display for FeatureStats {
         writeln!(f, "Q1: {}", self.tdigest.estimate_quantile(0.25))?;
         writeln!(f, "Median: {}", self.tdigest.estimate_quantile(0.5))?;
         writeln!(f, "Q3: {}", self.tdigest.estimate_quantile(0.75))?;
+        writeln!(f, "Frequencies: {:#?}", self.frequencies)?;
 
         Ok(())
     }
@@ -295,12 +296,12 @@ pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, mar
             .min()
             .unwrap_or(0);
         let outcome_budget = bins_from_sample_complexity(n, epsilon, delta);
-        let mut remaining = (outcome_budget as f64).powf(1.0 / (markov_order.min(i as u32) + 1) as f64).floor() as u32;
+        let mut per_packet_budget = (outcome_budget as f64).powf(1.0 / (markov_order.min(i as u32) + 1) as f64).floor() as u32;
 
-        println!("Index {} | n = {} | k = {}", i, n, outcome_budget);
+        println!("Index {} | n = {} | k = {} -> {} per packet", i, n, outcome_budget, per_packet_budget);
 
         if feature_mask.contains(FeatureKind::Direction) {
-            remaining /= 2;
+            per_packet_budget /= 2;
             packet_quantizer.set_feature_quantizer(
                 FeatureQuantizer::identity(BoundedFeature::new(FeatureKind::Direction))
             );
@@ -313,14 +314,19 @@ pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, mar
                 let feature = BoundedFeature::new(FeatureKind::Size);
                 let fd = freedman_diaconis_rule(&feature, n, stats.iqr());
                 
-                size_bins = if remaining > 1460 {
-                    println!("Freedman-Diaconis rule proposed {}, falling back to 1460", fd);
-                    fd.min(1460) 
-                } 
-                else {
-                    let bins = fd.min(remaining).max(remaining.isqrt());
-                    println!("Freedman-Diaconis rule proposed {} but using {}", fd, bins);
-                    bins 
+                let time_masked = !feature_mask.contains(FeatureKind::Timestamp);
+                let size_budget = if time_masked {
+                    per_packet_budget.min(feature.max() as u32)
+                } else {
+                    (per_packet_budget.isqrt()).min(feature.max() as u32)
+                };
+
+                size_bins = if time_masked {
+                    // single feature => ignore FD, maximize structure
+                    size_budget
+                } else {
+                    // multiple features => FD can restrict
+                    fd.min(size_budget)
                 };
 
                 let quantizer = if size_bins < 1460 {
@@ -341,7 +347,7 @@ pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, mar
                 let effective_max = stats.tdigest.estimate_quantile(0.99).min(FeatureKind::Timestamp.domain().max);
                 let bounded = BoundedFeature::new_with_bounds(FeatureKind::Timestamp, Some(effective_min), Some(effective_max));
 
-                let time_bins = freedman_diaconis_rule(&bounded, n, stats.iqr()).min(remaining / size_bins);
+                let time_bins = freedman_diaconis_rule(&bounded, n, stats.iqr()).min(per_packet_budget / size_bins);
 
                 packet_quantizer.set_feature_quantizer(FeatureQuantizer::log_uniform_bounded(bounded, time_bins));
                 println!("\t{:#?}) nbins: {} | lower: {} | upper: {}", FeatureKind::Timestamp, time_bins, effective_min, effective_max);

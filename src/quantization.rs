@@ -276,13 +276,13 @@ impl FeatureQuantizer {
             .map(|(i, w)| (i + 1, (w[1] as isize - w[0] as isize).abs()))
             .collect();
 
-        diffs.sort_unstable_by(|(_, a), (_, b)| b.cmp(a));
+        diffs.sort_by(|(_, a), (_, b)| b.cmp(a));
 
         let mut boundaries: Vec<usize> = diffs.iter()
             .take((bins - 1) as usize)
             .map(|(i, _)| *i)
             .collect();
-        boundaries.sort_unstable();
+        boundaries.sort();
 
         let mut lookup = vec![0u32; feature.domain_size() as usize];
         let mut bin_vec: Vec<Bin> = Vec::with_capacity(bins as usize);
