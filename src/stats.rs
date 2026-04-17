@@ -312,7 +312,7 @@ pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, mar
         if feature_mask.contains(FeatureKind::Size) {
             if let Some(stats) = traffic_stats.stats.get(&FeatureKind::Size).and_then(|v| v.get(i)) {
                 let feature = BoundedFeature::new(FeatureKind::Size);
-                let fd = freedman_diaconis_rule(&feature, n, stats.iqr());
+                let fd = freedman_diaconis_rule(&feature, n, stats.iqr2());
                 
                 let time_masked = !feature_mask.contains(FeatureKind::Timestamp);
                 let size_budget = if time_masked {
@@ -329,7 +329,7 @@ pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, mar
                     fd.min(size_budget)
                 };
 
-                let quantizer = if size_bins < 1460 {
+                let quantizer = if size_bins < feature.max() as u32 {
                     FeatureQuantizer::maxdiff(feature, &stats.frequencies, size_bins)
                 }
                 else {
