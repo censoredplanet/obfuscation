@@ -10,7 +10,7 @@ use crate::base::Flow;
 use crate::feature::{FeatureKind};
 use crate::quantization::{BoundedFeature, FeatureQuantizer, PacketQuantizer};
 
-const TDIGEST_BUFFER_SIZE: usize = 4096;
+const TDIGEST_BUFFER_SIZE: usize = 2048;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct FeatureStats {
@@ -31,9 +31,7 @@ impl FeatureStats {
     pub fn update(&mut self, value: f64) {
         self.count += 1;
 
-        if let Some(count) = self.frequencies.get_mut(value.round() as usize) {
-            *count += 1;
-        }
+        self.frequencies[value.clamp(0.0, 1459.0) as usize] += 1;
 
         let delta = value - self.mean;
         self.mean += delta / self.count as f64;
