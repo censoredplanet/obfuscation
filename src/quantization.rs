@@ -349,7 +349,7 @@ impl FeatureQuantizer {
                 let idx = ((log_transform(clamped) - log_min) * inv_log_width).floor() as i64;
                 FeatureValue::Bin(idx.clamp(0, self.num_bins() as i64 - 1) as u32)
             },
-            Quantization::Empirical { lookup, bins: _ } => FeatureValue::Bin(lookup[value as usize])
+            Quantization::Empirical { lookup, bins: _ } => FeatureValue::Bin(lookup[value as usize - 1])
         }
     }
 

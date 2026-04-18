@@ -1,12 +1,13 @@
 use std::fmt;
 use std::sync::Arc;
+use std::hash::{Hash, Hasher};
 
 use hashbrown::HashMap;
 
 use crate::quantization::{PacketProjection, PacketProjectionDisplay, PacketQuantizer};
 use crate::merge::{Merge, PostcardIO};
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, std::hash::Hash)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Sequence<T> {
     pub sequence: Arc<[T]>,
     len: usize
@@ -24,6 +25,26 @@ impl<T: Clone> Sequence<T> {
         self.sequence[self.sequence.len() - 1].clone()
     }
 }
+
+impl<T: Hash> Hash for Sequence<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.len.hash(state);
+        for i in 0..self.len {
+            self.sequence[i].hash(state);
+        }
+    }
+}
+
+impl<T: PartialEq> PartialEq for Sequence<T> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.len != other.len {
+            return false;
+        }
+        self.sequence[..self.len] == other.sequence[..other.len]
+    }
+}
+
+impl<T: Eq> Eq for Sequence<T> {}
 
 impl<T> From<Vec<T>> for Sequence<T> {
     fn from(value: Vec<T>) -> Self {

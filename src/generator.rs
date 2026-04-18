@@ -85,11 +85,12 @@ impl<'a, R: rand::Rng> PacketSource for Generator<'a, R> {
 
         let quantizer = self.quantizer.quantizer_at(self.emitted);
 
+        let quantized_history = Sequence::from(self.history
+            .iter()
+            .map(|packet| quantizer.quantize_packet(packet))
+            .collect::<Vec<_>>());
         let quantized_packet = self.model[self.emitted]
-            .get(&Sequence::from(self.history
-                    .iter()
-                    .map(|packet| quantizer.quantize_packet(packet))
-                    .collect::<Vec<_>>()))
+            .get(&quantized_history)
             .unwrap()
             .sample(&mut self.rng);
         let mut packet = quantizer.dequantize(quantized_packet, &mut self.rng);
