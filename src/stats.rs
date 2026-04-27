@@ -1,13 +1,13 @@
 use std::fmt;
 
-use rayon::prelude::*;
-use hashbrown::HashMap;
-use tdigest::TDigest;
 use enumflags2::BitFlags;
+use hashbrown::HashMap;
+use rayon::prelude::*;
+use tdigest::TDigest;
 
-use crate::merge::{Merge, PostcardIO};
 use crate::base::Flow;
-use crate::feature::{FeatureKind};
+use crate::feature::FeatureKind;
+use crate::merge::{Merge, PostcardIO};
 use crate::quantization::{BoundedFeature, FeatureQuantizer, PacketQuantizer};
 
 const TDIGEST_BUFFER_SIZE: usize = 2048;
@@ -48,7 +48,9 @@ impl FeatureStats {
 
     pub fn flush_buffer(&mut self) {
         if !self.buffer.is_empty() {
-            self.tdigest = self.tdigest.merge_unsorted(std::mem::take(&mut self.buffer));
+            self.tdigest = self
+                .tdigest
+                .merge_unsorted(std::mem::take(&mut self.buffer));
         }
     }
 
@@ -85,7 +87,7 @@ impl FeatureStats {
             }
             self.frequencies.len()
         };
-        
+
         let q1 = quantile(0.25);
         let q3 = quantile(0.75);
 
@@ -103,7 +105,7 @@ impl Default for FeatureStats {
             max: f64::NEG_INFINITY,
             tdigest: TDigest::new_with_size(100),
             frequencies: vec![0; FeatureKind::Size.domain().max as usize],
-            buffer: Vec::with_capacity(TDIGEST_BUFFER_SIZE)
+            buffer: Vec::with_capacity(TDIGEST_BUFFER_SIZE),
         }
     }
 }
@@ -139,13 +141,14 @@ impl Merge for FeatureStats {
         self.min = self.min.min(other.min);
         self.max = self.max.max(other.max);
 
-        self.frequencies.iter_mut()
+        self.frequencies
+            .iter_mut()
             .zip(other.frequencies.iter())
             .for_each(|(a, b)| *a += b);
 
         self.tdigest = TDigest::merge_digests(vec![self.tdigest.clone(), other.tdigest.clone()]);
         self.buffer.extend_from_slice(&other.buffer);
-        
+
         if self.buffer.len() >= TDIGEST_BUFFER_SIZE {
             self.flush_buffer();
         }
@@ -154,7 +157,7 @@ impl Merge for FeatureStats {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 pub struct TrafficStats {
-    pub stats: HashMap<FeatureKind, Vec<FeatureStats>> 
+    pub stats: HashMap<FeatureKind, Vec<FeatureStats>>,
 }
 
 #[derive(Debug)]
@@ -189,14 +192,15 @@ impl TrafficStats {
     }
 
     pub fn from_flows(flows: &[Flow]) -> Self {
-        let mut traffic_stats = flows.par_iter()
+        let mut traffic_stats = flows
+            .par_iter()
             .map(|flow| {
                 let mut stats = Self::default();
                 stats.update(flow);
                 stats
             })
             .reduce(Self::default, |accumulator, stats| accumulator.merge(stats));
-        
+
         traffic_stats.finalize();
 
         traffic_stats
@@ -246,7 +250,10 @@ impl<'a> TrafficStatsView<'a> {
 
 impl fmt::Display for TrafficStatsView<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let len = self.stats.stats.values()
+        let len = self
+            .stats
+            .stats
+            .values()
             .next()
             .map(|v| v.len())
             .unwrap_or(0);
@@ -254,7 +261,9 @@ impl fmt::Display for TrafficStatsView<'_> {
         let mut first = true;
         for i in 0..len {
             if let Some(idx) = self.index {
-                if i != idx { continue; }
+                if i != idx {
+                    continue;
+                }
             }
 
             if !first {
@@ -266,7 +275,9 @@ impl fmt::Display for TrafficStatsView<'_> {
 
             for (feature, stats) in &self.stats.stats {
                 if let Some(feature_filter) = &self.feature {
-                    if *feature != *feature_filter { continue; }
+                    if *feature != *feature_filter {
+                        continue;
+                    }
                 }
 
                 write!(f, "\n{:?}:\n===\n{}", feature, stats[i])?;
@@ -277,43 +288,59 @@ impl fmt::Display for TrafficStatsView<'_> {
     }
 }
 
-pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, markov_order: u32, epsilon: f64, delta: f64) -> Vec<PacketQuantizer> {
+pub fn bin(
+    traffic_stats: TrafficStats,
+    feature_mask: BitFlags<FeatureKind>,
+    markov_order: u32,
+    epsilon: f64,
+    delta: f64,
+) -> Vec<PacketQuantizer> {
     let max_len = traffic_stats
         .stats
         .values()
         .map(|v| v.len())
         .max()
         .unwrap_or(0);
-    
+
     let mut quantizers: Vec<PacketQuantizer> = Vec::with_capacity(max_len);
-    
+
     for i in 0..max_len {
         let mut packet_quantizer = PacketQuantizer::default();
-        
-        let n = feature_mask.iter()
+
+        let n = feature_mask
+            .iter()
             .filter_map(|f| traffic_stats.stats.get(&f).and_then(|v| v.get(i)))
             .map(|s| s.count)
             .min()
             .unwrap_or(0);
         let outcome_budget = bins_from_sample_complexity(n, epsilon, delta);
-        let mut per_packet_budget = (outcome_budget as f64).powf(1.0 / (markov_order.min(i as u32) + 1) as f64).floor() as u32;
+        let mut per_packet_budget = (outcome_budget as f64)
+            .powf(1.0 / (markov_order.min(i as u32) + 1) as f64)
+            .floor() as u32;
 
-        println!("Index {} | n = {} | k = {} -> {} per packet", i, n, outcome_budget, per_packet_budget);
+        println!(
+            "Index {} | n = {} | k = {} -> {} per packet",
+            i, n, outcome_budget, per_packet_budget
+        );
 
         if feature_mask.contains(FeatureKind::Direction) {
             per_packet_budget /= 2;
-            packet_quantizer.set_feature_quantizer(
-                FeatureQuantizer::identity(BoundedFeature::new(FeatureKind::Direction))
-            );
+            packet_quantizer.set_feature_quantizer(FeatureQuantizer::identity(
+                BoundedFeature::new(FeatureKind::Direction),
+            ));
             println!("\t{:#?}) nbins: {}", FeatureKind::Direction, 2);
         }
 
         let mut size_bins = 1;
         if feature_mask.contains(FeatureKind::Size) {
-            if let Some(stats) = traffic_stats.stats.get(&FeatureKind::Size).and_then(|v| v.get(i)) {
+            if let Some(stats) = traffic_stats
+                .stats
+                .get(&FeatureKind::Size)
+                .and_then(|v| v.get(i))
+            {
                 let feature = BoundedFeature::new(FeatureKind::Size);
                 let fd = freedman_diaconis_rule(&feature, n, stats.iqr2());
-                
+
                 let time_masked = !feature_mask.contains(FeatureKind::Timestamp);
                 let size_budget = if time_masked {
                     per_packet_budget.min(feature.max() as u32)
@@ -331,8 +358,7 @@ pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, mar
 
                 let quantizer = if size_bins < feature.max() as u32 {
                     FeatureQuantizer::maxdiff(feature, &stats.frequencies, size_bins)
-                }
-                else {
+                } else {
                     FeatureQuantizer::identity(feature)
                 };
 
@@ -342,23 +368,48 @@ pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, mar
         }
 
         if feature_mask.contains(FeatureKind::Timestamp) {
-            if let Some(stats) = traffic_stats.stats.get(&FeatureKind::Timestamp).and_then(|v| v.get(i)) {
-                let effective_min = stats.tdigest.estimate_quantile(0.01).max(FeatureKind::Timestamp.domain().min);
-                let effective_max = stats.tdigest.estimate_quantile(0.99).min(FeatureKind::Timestamp.domain().max);
-                let bounded = BoundedFeature::new_with_bounds(FeatureKind::Timestamp, Some(effective_min), Some(effective_max));
+            if let Some(stats) = traffic_stats
+                .stats
+                .get(&FeatureKind::Timestamp)
+                .and_then(|v| v.get(i))
+            {
+                let effective_min = stats
+                    .tdigest
+                    .estimate_quantile(0.01)
+                    .max(FeatureKind::Timestamp.domain().min);
+                let effective_max = stats
+                    .tdigest
+                    .estimate_quantile(0.99)
+                    .min(FeatureKind::Timestamp.domain().max);
+                let bounded = BoundedFeature::new_with_bounds(
+                    FeatureKind::Timestamp,
+                    Some(effective_min),
+                    Some(effective_max),
+                );
 
-                let time_bins = freedman_diaconis_rule(&bounded, n, stats.iqr()).min(per_packet_budget / size_bins);
+                let time_bins = freedman_diaconis_rule(&bounded, n, stats.iqr())
+                    .min(per_packet_budget / size_bins);
 
-                packet_quantizer.set_feature_quantizer(FeatureQuantizer::log_uniform_bounded(bounded, time_bins));
-                println!("\t{:#?}) nbins: {} | lower: {} | upper: {}", FeatureKind::Timestamp, time_bins, effective_min, effective_max);
+                packet_quantizer.set_feature_quantizer(FeatureQuantizer::log_uniform_bounded(
+                    bounded, time_bins,
+                ));
+                println!(
+                    "\t{:#?}) nbins: {} | lower: {} | upper: {}",
+                    FeatureKind::Timestamp,
+                    time_bins,
+                    effective_min,
+                    effective_max
+                );
             }
         }
 
         assert!(
-            packet_quantizer.timestamp.num_bins() *
-            packet_quantizer.direction.num_bins() *
-            packet_quantizer.size.num_bins()
-            <= outcome_budget, "exceeded outcome budget");
+            packet_quantizer.timestamp.num_bins()
+                * packet_quantizer.direction.num_bins()
+                * packet_quantizer.size.num_bins()
+                <= outcome_budget,
+            "exceeded outcome budget"
+        );
 
         quantizers.push(packet_quantizer);
     }
@@ -370,7 +421,12 @@ pub fn bin(traffic_stats: TrafficStats, feature_mask: BitFlags<FeatureKind>, mar
 pub fn bins_from_sample_complexity(n: usize, epsilon: f64, delta: f64) -> usize {
     let squared_epsilon = epsilon * epsilon;
     let min_samples = (2.0 / squared_epsilon) * (2.0 / delta).ln();
-    assert!(n as f64 >= min_samples, "Not enough samples! Have {}, but need at least {} samples. Relax epsilon and/or delta.", n, min_samples.ceil());
+    assert!(
+        n as f64 >= min_samples,
+        "Not enough samples! Have {}, but need at least {} samples. Relax epsilon and/or delta.",
+        n,
+        min_samples.ceil()
+    );
     (n as f64 * squared_epsilon).floor() as usize
 }
 

@@ -1,19 +1,19 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand, Args};
+use clap::{Args, Parser, Subcommand};
 use winnow::Parser as WinnowParser;
+use winnow::ascii::{digit1, space0};
+use winnow::combinator::{alt, opt, seq};
 use winnow::token::literal;
-use winnow::combinator::{seq, alt, opt};
-use winnow::ascii::{space0, digit1};
 
+use crate::base::{FlowFilterPredicate, TLSVersion};
 use crate::feature::FeatureKind;
-use crate::base::{TLSVersion, FlowFilterPredicate};
 use crate::obfuscation::TLSMode;
 
 #[derive(Debug, Parser)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Commands
+    pub command: Commands,
 }
 
 #[derive(Debug, Subcommand)]
@@ -23,6 +23,8 @@ pub enum Commands {
     Stats(StatsCli),
     Pipeline(PipelineCli),
     Generate(GenerateArgs),
+    #[command(name = "dump-csv")]
+    DumpCsv(DumpCsvArgs),
     Obfuscation(ObfuscationCli),
     Histograms(HistogramsCli),
     Divergence(DivergenceCli),
@@ -37,13 +39,13 @@ pub struct Zeek2FlowsArgs {
     #[arg(long)]
     pub packets: String,
     #[arg(long)]
-    pub output: PathBuf
+    pub output: PathBuf,
 }
 
 #[derive(Debug, Parser)]
 pub struct StatsCli {
     #[command(subcommand)]
-    pub command: StatsCommand
+    pub command: StatsCommand,
 }
 
 #[derive(Debug, Subcommand)]
@@ -51,7 +53,7 @@ pub enum StatsCommand {
     Compute(StatsComputeArgs),
     Merge(StatsMergeArgs),
     Bin(StatsBinArgs),
-    Display(StatsDisplayArgs)
+    Display(StatsDisplayArgs),
 }
 
 #[derive(Debug, Args)]
@@ -59,12 +61,13 @@ pub struct StatsComputeArgs {
     /// Path to flows
     #[arg(long)]
     pub flows: PathBuf,
-    #[arg(long, default_value = "tlsDataPackets >= 0")] // this is hack for always true, make this better
+    #[arg(long, default_value = "tlsDataPackets >= 0")]
+    // this is hack for always true, make this better
     pub flow_filter: FlowFilterPredicate,
     #[arg(long)]
     pub strip_tls_handshake: bool,
     #[arg(long)]
-    pub output: PathBuf
+    pub output: PathBuf,
 }
 
 #[derive(Debug, Args)]
@@ -74,7 +77,7 @@ pub struct StatsMergeArgs {
     pub input: PathBuf,
     /// Path to the merged TrafficStats file
     #[arg(long)]
-    pub output: PathBuf
+    pub output: PathBuf,
 }
 
 #[derive(Debug, Args)]
@@ -92,7 +95,7 @@ pub struct StatsBinArgs {
     #[arg(long, default_value_t = 0.05)]
     pub delta: f64,
     #[arg(long)]
-    pub mask: Option<Vec<FeatureKind>>
+    pub mask: Option<Vec<FeatureKind>>,
 }
 
 #[derive(Debug, Args)]
@@ -102,47 +105,49 @@ pub struct StatsDisplayArgs {
     #[arg(long)]
     pub feature: Option<FeatureKind>,
     #[arg(long)]
-    pub index: Option<usize>
+    pub index: Option<usize>,
 }
 
 #[derive(Debug, serde::Deserialize, Clone)]
 pub enum FlowSource {
     Empirical {
         path: Option<PathBuf>,
-        flow_filter: FlowFilterPredicate
+        flow_filter: FlowFilterPredicate,
     },
     Generated {
         traffic_profile: PathBuf,
         quantizer: PathBuf,
         num_flows: usize,
-        flow_length: usize
+        flow_length: usize,
     },
     Clone {
-        source: String
-    }
+        source: String,
+    },
 }
 
-fn default_pseudocount() -> f64 { 1.0 }
+fn default_pseudocount() -> f64 {
+    1.0
+}
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Model {
     pub model_assumptions: PathBuf,
     #[serde(default = "default_pseudocount")]
-    pub pseudocount: f64
+    pub pseudocount: f64,
 }
 
 #[derive(Debug, serde::Deserialize)]
 pub struct PipelineConfig {
     pub flow: FlowConfig,
     pub model: Model,
-    pub ml: Option<MLConfig>
+    pub ml: Option<MLConfig>,
 }
 
 #[derive(Debug, serde::Deserialize)]
 pub struct FlowConfig {
     pub source_a: FlowSource,
     pub strip_tls_handshake: bool,
-    pub obfuscator: Option<ObfuscatorSpec>
+    pub obfuscator: Option<ObfuscatorSpec>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -156,13 +161,13 @@ pub struct MLConfig {
 #[derive(Debug, Parser)]
 pub struct PipelineCli {
     #[command(subcommand)]
-    pub command: PipelineCommand
+    pub command: PipelineCommand,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum PipelineCommand {
     Histograms(PipelineHistogramsArgs),
-    Ml(PipelineMlArgs)
+    Ml(PipelineMlArgs),
 }
 
 #[derive(Debug, Args)]
@@ -193,7 +198,7 @@ pub struct PipelineMlArgs {
     #[arg(long)]
     pub test_path: PathBuf,
     #[arg(long)]
-    pub histograms: Option<PathBuf>
+    pub histograms: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -207,14 +212,52 @@ pub struct GenerateArgs {
     #[arg(long)]
     pub flow_length: usize,
     #[arg(long)]
-    pub output: PathBuf
+    pub output: Option<PathBuf>,
+    /// Emit quantized bin ids instead of raw feature values
+    #[arg(long)]
+    pub quantized: bool,
+    /// Optional seed for reproducible generation
+    #[arg(long)]
+    pub seed: Option<u64>,
+}
+
+#[derive(Debug, Args)]
+pub struct DumpCsvArgs {
+    /// One or more binary flows files (output of zeek2flows); accepts multiple paths
+    #[arg(long, num_args = 1..)]
+    pub flows: Vec<PathBuf>,
+    /// Model assumptions JSON (provides the quantizer / feature mask)
+    #[arg(long)]
+    pub model_assumptions: PathBuf,
+    /// Max packets per flow (N)
+    #[arg(long, short = 'N')]
+    pub max_packets: usize,
+    /// Maximum number of flow rows to write
+    #[arg(long, short = 'M', default_value_t = usize::MAX)]
+    pub num_flows: usize,
+    /// Minimum packets a flow must have to be included (default = max_packets)
+    #[arg(long)]
+    pub min_packets: Option<usize>,
+    #[arg(long)]
+    pub strip_tls_handshake: bool,
+    /// Filter flows using the predicate DSL (e.g. "tlsVersion == TLSv13")
+    #[arg(long, default_value = "tlsDataPackets >= 0")]
+    pub flow_filter: FlowFilterPredicate,
+    /// Exclude timing columns from output (emit only size/direction)
+    #[arg(long)]
+    pub skip_timing: bool,
+    /// Emit quantized bin ids instead of raw feature values
+    #[arg(long)]
+    pub quantized: bool,
+    #[arg(long)]
+    pub output: PathBuf,
 }
 
 #[derive(Debug, serde::Deserialize, Clone)]
 #[serde(try_from = "String")]
 pub enum ObfuscatorSpec {
     Random { tls_mode: TLSMode },
-    FromFile(std::path::PathBuf)
+    FromFile(std::path::PathBuf),
 }
 
 impl TryFrom<String> for ObfuscatorSpec {
@@ -224,14 +267,12 @@ impl TryFrom<String> for ObfuscatorSpec {
         if let Some(rest) = s.strip_prefix("random:") {
             let tls_mode = TLSMode::try_from(rest.to_string())?;
             Ok(Self::Random { tls_mode })
-        } 
-        else if let Some(path) = s.strip_prefix("file:") {
+        } else if let Some(path) = s.strip_prefix("file:") {
             if path.is_empty() {
                 return Err("file:<path> requires a non-empty path".into());
             }
             Ok(Self::FromFile(PathBuf::from(path)))
-        } 
-        else {
+        } else {
             Err("expected one of: random:<outer|inner|tls-in-tls>, file:<path>".into())
         }
     }
@@ -253,31 +294,31 @@ impl TryFrom<String> for TLSMode {
 #[derive(Debug, Parser)]
 pub struct ObfuscationCli {
     #[command(subcommand)]
-    pub command: ObfuscationCommands
+    pub command: ObfuscationCommands,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum ObfuscationCommands {
-    RandProto(RandProtoArgs)
+    RandProto(RandProtoArgs),
 }
 
 #[derive(Debug, Args)]
 pub struct RandProtoArgs {
     #[arg(short, long)]
-    pub output: PathBuf
+    pub output: PathBuf,
 }
 
 #[derive(Debug, Parser)]
 pub struct HistogramsCli {
     #[command(subcommand)]
-    pub command: HistogramsCommands
+    pub command: HistogramsCommands,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum HistogramsCommands {
     Display(HistogramsDisplayArgs),
     Divergence(HistogramsDivergenceArgs),
-    Merge(HistogramsMergeArgs)
+    Merge(HistogramsMergeArgs),
 }
 
 #[derive(Debug, Args)]
@@ -293,7 +334,7 @@ pub struct HistogramsDisplayArgs {
     #[arg(long)]
     pub top_k: Option<usize>,
     #[arg(long)]
-    pub model: Option<PathBuf>
+    pub model: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -311,32 +352,32 @@ pub struct HistogramsDivergenceArgs {
     #[arg(long)]
     pub right: PathBuf,
     #[arg(long)]
-    pub output: PathBuf
+    pub output: PathBuf,
 }
 
 #[derive(Debug, Parser)]
 pub struct DivergenceCli {
     #[command(subcommand)]
-    pub command: DivergenceCommands
+    pub command: DivergenceCommands,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum DivergenceCommands {
     Cumulative(DivergenceCumulativeArgs),
     Delta(DivergenceDeltaArgs),
-    Terms(DivergenceTermsArgs)
+    Terms(DivergenceTermsArgs),
 }
 
 #[derive(Debug, Args)]
 pub struct DivergenceCumulativeArgs {
     #[arg(long)]
-    pub input: PathBuf
+    pub input: PathBuf,
 }
 
 #[derive(Debug, Args)]
 pub struct DivergenceDeltaArgs {
     #[arg(long)]
-    pub input: PathBuf
+    pub input: PathBuf,
 }
 
 #[derive(Debug, Args)]
@@ -344,7 +385,7 @@ pub struct DivergenceTermsArgs {
     #[arg(long)]
     pub input: PathBuf,
     #[arg(long)]
-    pub index: usize
+    pub index: usize,
 }
 
 // ===============
@@ -355,7 +396,7 @@ impl std::str::FromStr for FlowFilterPredicate {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut input = s;
-        
+
         let predicate = parse_flow_filter_predicate
             .parse_next(&mut input)
             .map_err(|e| format!("Bad flow predicate! {e:?}"))?;
@@ -369,7 +410,7 @@ impl TryFrom<String> for FlowFilterPredicate {
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
         let mut input = s.as_str();
-        
+
         let predicate = parse_flow_filter_predicate
             .parse_next(&mut input)
             .map_err(|e| format!("Bad flow predicate! {e:?}"))?;
@@ -391,18 +432,13 @@ fn parse_flow_filter_predicate(input: &mut &str) -> winnow::Result<FlowFilterPre
 
     if let Some((right,)) = maybe_right {
         Ok(FlowFilterPredicate::And(Box::new(left), Box::new(right)))
-    }
-    else {
+    } else {
         Ok(left)
     }
 }
 
 fn atomic_predicate(input: &mut &str) -> winnow::Result<FlowFilterPredicate> {
-    alt((
-        tls_data_packets_comp,
-        tls_version_comp,
-    ))
-    .parse_next(input)
+    alt((tls_data_packets_comp, tls_version_comp)).parse_next(input)
 }
 
 fn tls_data_packets_comp(input: &mut &str) -> winnow::Result<FlowFilterPredicate> {
@@ -412,9 +448,12 @@ fn tls_data_packets_comp(input: &mut &str) -> winnow::Result<FlowFilterPredicate
         _: literal(">="),
         _: space0,
         digit1,
-    ).parse_next(input)?;
+    )
+    .parse_next(input)?;
 
-    Ok(FlowFilterPredicate::MinTLSDataPackets(n.parse::<usize>().unwrap()))
+    Ok(FlowFilterPredicate::MinTLSDataPackets(
+        n.parse::<usize>().unwrap(),
+    ))
 }
 
 fn tls_version_comp(input: &mut &str) -> winnow::Result<FlowFilterPredicate> {
@@ -427,15 +466,21 @@ fn tls_version_comp(input: &mut &str) -> winnow::Result<FlowFilterPredicate> {
             literal("TLSv12").value(TLSVersion::TLSv12),
             literal("TLSv13").value(TLSVersion::TLSv13),
         ))
-    ).parse_next(input)?;
+    )
+    .parse_next(input)?;
 
     Ok(FlowFilterPredicate::TLSVersionEq(version))
 }
 
 // Allow the --flows command line option to override whatever is in config
 pub fn resolve(config: &mut PipelineConfig, args: &CommonPipelineArgs) {
-    if let FlowSource::Empirical { path, flow_filter: _ } = &mut config.flow.source_a {
-        let new_path = args.flows
+    if let FlowSource::Empirical {
+        path,
+        flow_filter: _,
+    } = &mut config.flow.source_a
+    {
+        let new_path = args
+            .flows
             .as_ref()
             .cloned()
             .or(path.take())

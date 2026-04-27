@@ -1,17 +1,17 @@
 use std::error::Error;
 
+use hashbrown::HashMap;
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
-use hashbrown::HashMap;
 
 use crate::base::{Flow, FlowMetadata, Packet, ProtocolMetadata};
+use crate::histograms::{Histogram, Sequence};
 use crate::quantization::{FlowQuantizer, PacketProjection};
-use crate::histograms::{Sequence, Histogram};
 
 #[derive(Debug)]
 pub struct WeightedSampler<K: Eq + std::hash::Hash + Clone> {
     pub elements: Vec<K>,
-    pub weighted_index: WeightedIndex<usize>
+    pub weighted_index: WeightedIndex<usize>,
 }
 
 impl<K: Eq + std::hash::Hash + Clone> WeightedSampler<K> {
@@ -20,23 +20,39 @@ impl<K: Eq + std::hash::Hash + Clone> WeightedSampler<K> {
     }
 }
 
-impl<K> From<&Histogram<K>> for WeightedSampler<K> 
-where 
-    K: serde::Serialize + Eq + std::hash::Hash + Clone
+impl<K> From<&Histogram<K>> for WeightedSampler<K>
+where
+    K: serde::Serialize + Eq + std::hash::Hash + Clone,
 {
     fn from(hist: &Histogram<K>) -> Self {
-        let mut elements = Vec::with_capacity(hist.support_size());
-        let mut weights = Vec::with_capacity(hist.support_size());
+        // Canonicalize support order so a fixed RNG seed yields the same samples
+        // across process runs even though HashMap iteration order is randomized.
+        let mut entries = hist
+            .counts
+            .iter()
+            .map(|(sequence, &weight)| {
+                let element = sequence.last();
+                let sort_key =
+                    postcard::to_stdvec(&element).expect("sampler element should serialize");
+                (sort_key, element, weight)
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by(|left, right| left.0.cmp(&right.0));
 
-        for (e, &w) in hist.counts.iter() {
-            elements.push(e.last());
-            weights.push(w);
+        let mut elements = Vec::with_capacity(entries.len());
+        let mut weights = Vec::with_capacity(entries.len());
+
+        for (_, element, weight) in entries {
+            elements.push(element);
+            weights.push(weight);
         }
 
-        let weighted_index = WeightedIndex::new(&weights)
-            .expect("Histogram cannot be empty");
+        let weighted_index = WeightedIndex::new(&weights).expect("Histogram cannot be empty");
 
-        WeightedSampler { elements, weighted_index }
+        WeightedSampler {
+            elements,
+            weighted_index,
+        }
     }
 }
 
@@ -55,7 +71,7 @@ pub struct Generator<'a, R: rand::Rng> {
     emitted: usize,
     length: usize,
     prev_timestamp: f64,
-    rng: R
+    rng: R,
 }
 
 impl<'a, R: rand::Rng> Generator<'a, R> {
@@ -64,8 +80,8 @@ impl<'a, R: rand::Rng> Generator<'a, R> {
         quantizer: &'a FlowQuantizer,
         markov_order: u32,
         length: usize,
-        rng: R) -> Self
-    {
+        rng: R,
+    ) -> Self {
         Self {
             model,
             quantizer,
@@ -74,21 +90,25 @@ impl<'a, R: rand::Rng> Generator<'a, R> {
             emitted: 0,
             length,
             prev_timestamp: 0.0,
-            rng
+            rng,
         }
     }
 }
 
 impl<'a, R: rand::Rng> PacketSource for Generator<'a, R> {
     fn next(&mut self) -> Option<Packet> {
-        if self.emitted >= self.length { return None; }
+        if self.emitted >= self.length {
+            return None;
+        }
 
         let quantizer = self.quantizer.quantizer_at(self.emitted);
 
-        let quantized_history = Sequence::from(self.history
-            .iter()
-            .map(|packet| quantizer.quantize_packet(packet))
-            .collect::<Vec<_>>());
+        let quantized_history = Sequence::from(
+            self.history
+                .iter()
+                .map(|packet| quantizer.quantize_packet(packet))
+                .collect::<Vec<_>>(),
+        );
         let quantized_packet = self.model[self.emitted]
             .get(&quantized_history)
             .unwrap()
@@ -106,7 +126,7 @@ impl<'a, R: rand::Rng> PacketSource for Generator<'a, R> {
             self.history.remove(0);
         }
         self.emitted += 1;
-        
+
         Some(packet)
     }
 }
@@ -132,7 +152,8 @@ pub fn generate_flow<R: rand::Rng>(
             "flow_length {} exceeds available packet-level distributions {}",
             flow_length,
             samplers.len()
-        ).into());
+        )
+        .into());
     }
 
     let generator = Generator::new(samplers, quantizer, markov_order, flow_length, rng);

@@ -1,23 +1,23 @@
 use std::fmt;
-use std::sync::Arc;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 use hashbrown::HashMap;
 
-use crate::quantization::{PacketProjection, PacketProjectionDisplay, PacketQuantizer};
 use crate::merge::{Merge, PostcardIO};
+use crate::quantization::{PacketProjection, PacketProjectionDisplay, PacketQuantizer};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Sequence<T> {
     pub sequence: Arc<[T]>,
-    len: usize
+    len: usize,
 }
 
 impl<T: Clone> Sequence<T> {
     pub fn prefix(&self) -> Self {
         Sequence {
             sequence: Arc::clone(&self.sequence),
-            len: self.len.saturating_sub(1)
+            len: self.len.saturating_sub(1),
         }
     }
 
@@ -51,7 +51,7 @@ impl<T> From<Vec<T>> for Sequence<T> {
         let len = value.len();
         Sequence {
             sequence: value.into(),
-            len: len
+            len: len,
         }
     }
 }
@@ -70,7 +70,7 @@ impl fmt::Display for SequenceDisplay<'_, PacketProjection> {
             }
             let packet_projection = PacketProjectionDisplay {
                 projection: &packet,
-                quantizer: self.quantizer
+                quantizer: self.quantizer,
             };
             write!(f, "{}", packet_projection)?;
         }
@@ -88,7 +88,7 @@ pub struct Histogram<K: Eq + std::hash::Hash + Clone> {
     total: usize,
     alpha: f64,
     alphabet_size: usize,
-    sequence_len: usize
+    sequence_len: usize,
 }
 
 impl<K> Histogram<K>
@@ -96,12 +96,12 @@ where
     K: serde::Serialize + Eq + std::hash::Hash + Clone,
 {
     pub fn new(alphabet_size: usize, sequence_len: usize, pseudocount: f64) -> Self {
-        Self { 
+        Self {
             counts: HashMap::new(),
             total: 0,
             alpha: pseudocount,
             alphabet_size: alphabet_size,
-            sequence_len: sequence_len
+            sequence_len: sequence_len,
         }
     }
 
@@ -128,7 +128,7 @@ where
 
     pub fn conditional_histogram(&self) -> HashMap<Sequence<K>, Histogram<K>> {
         let mut conditionals: HashMap<Sequence<K>, Histogram<K>> = HashMap::new();
-        
+
         for (sequence, count) in self.counts.iter() {
             let prefix = sequence.prefix();
             let last = Sequence::from(vec![sequence.last()]);
@@ -136,7 +136,7 @@ where
             let histogram = conditionals
                 .entry(prefix)
                 .or_insert_with(|| Histogram::new(self.alphabet_size, 1, self.alpha));
-            
+
             *histogram.counts.entry(last).or_insert(0) += count;
             histogram.total += count;
         }
@@ -171,20 +171,20 @@ where
         prefix_counts
     }
 
-    pub fn kl_divergence(&self, other: &Histogram<K>) -> HashMap<Sequence<K>, f64> 
-    where 
-        K: Eq + std::hash::Hash + Clone
+    pub fn kl_divergence(&self, other: &Histogram<K>) -> HashMap<Sequence<K>, f64>
+    where
+        K: Eq + std::hash::Hash + Clone,
     {
         let mut contributions = HashMap::new();
 
         for x in self.counts.keys() {
             let p = self.empirical_probability(x);
             let q = other.smoothed_probability(x);
-            
+
             let contribution = p * (p / q).ln();
             contributions.insert(x.clone(), contribution);
         }
-        
+
         contributions
     }
 
@@ -203,13 +203,15 @@ where
 
             let q = other.get_count(x);
             let q_prefix = *q_prefix_counts.get(&prefix).unwrap_or(&0);
-            let q_given_prefix = (q as f64 + other.alpha) / (q_prefix as f64 + (other.alphabet_size as f64 * other.alpha));
-            
-            let contribution = self.empirical_probability(x) * (p_given_prefix / q_given_prefix).ln();
+            let q_given_prefix = (q as f64 + other.alpha)
+                / (q_prefix as f64 + (other.alphabet_size as f64 * other.alpha));
+
+            let contribution =
+                self.empirical_probability(x) * (p_given_prefix / q_given_prefix).ln();
             contributions.insert(x.clone(), contribution);
         }
-        
-        contributions        
+
+        contributions
     }
 }
 
@@ -223,14 +225,14 @@ impl<K: Eq + std::hash::Hash + Clone> Merge for Histogram<K> {
     }
 }
 
-impl<T> PostcardIO for Vec<Histogram<T>>
-where
-    T: serde::Serialize + serde::de::DeserializeOwned + Eq + std::hash::Hash + Clone,
-{}
+impl<T> PostcardIO for Vec<Histogram<T>> where
+    T: serde::Serialize + serde::de::DeserializeOwned + Eq + std::hash::Hash + Clone
+{
+}
 
 pub fn merge_histogram_vecs<K>(accumulator: &mut Vec<Histogram<K>>, histograms: &[Histogram<K>])
 where
-    K: serde::Serialize + serde::de::DeserializeOwned + Eq + std::hash::Hash + Clone
+    K: serde::Serialize + serde::de::DeserializeOwned + Eq + std::hash::Hash + Clone,
 {
     for i in accumulator.len()..histograms.len() {
         accumulator.push(histograms[i].empty_like());
@@ -245,7 +247,7 @@ where
 pub struct HistogramViewBuilder {
     min_count: Option<usize>,
     min_probability: Option<f64>,
-    top_k: Option<usize>
+    top_k: Option<usize>,
 }
 
 impl HistogramViewBuilder {
@@ -268,13 +270,14 @@ impl HistogramViewBuilder {
         self
     }
 
-    pub fn from_histogram<'a, K>(self, histogram: &'a Histogram<K>) -> HistogramView<'a, K> 
-    where K: Eq + std::hash::Hash + Clone
+    pub fn from_histogram<'a, K>(self, histogram: &'a Histogram<K>) -> HistogramView<'a, K>
+    where
+        K: Eq + std::hash::Hash + Clone,
     {
         HistogramView {
             config: self,
             histogram: histogram,
-            quantizer: None
+            quantizer: None,
         }
     }
 }
@@ -283,7 +286,7 @@ impl HistogramViewBuilder {
 pub struct HistogramView<'a, K: Eq + std::hash::Hash + Clone> {
     config: HistogramViewBuilder,
     histogram: &'a Histogram<K>,
-    quantizer: Option<&'a PacketQuantizer>
+    quantizer: Option<&'a PacketQuantizer>,
 }
 
 impl<'a, K: Eq + std::hash::Hash + Clone> HistogramView<'a, K> {
@@ -295,10 +298,16 @@ impl<'a, K: Eq + std::hash::Hash + Clone> HistogramView<'a, K> {
     pub fn iter(&self) -> impl Iterator<Item = (&Sequence<K>, &usize)> {
         let total = self.histogram.total;
 
-        let mut entries: Vec<_> = self.histogram.counts.iter()
+        let mut entries: Vec<_> = self
+            .histogram
+            .counts
+            .iter()
             .filter(|&(_, &count)| {
-                self.config.min_count.map_or(true, |min| count >= min) &&
-                self.config.min_probability.map_or(true, |min| (count as f64) / (total as f64) >= min)
+                self.config.min_count.map_or(true, |min| count >= min)
+                    && self
+                        .config
+                        .min_probability
+                        .map_or(true, |min| (count as f64) / (total as f64) >= min)
             })
             .collect();
 
@@ -322,12 +331,21 @@ impl<'a> fmt::Display for HistogramView<'a, PacketProjection> {
             let probability = (count as f64) / (self.histogram.total as f64);
             let sequence_display = SequenceDisplay {
                 sequence: &key,
-                quantizer: self.quantizer
+                quantizer: self.quantizer,
             };
-            writeln!(f, "{:<10}\t{:<12.4}\t{}", count, probability, sequence_display)?;
+            writeln!(
+                f,
+                "{:<10}\t{:<12.4}\t{}",
+                count, probability, sequence_display
+            )?;
         }
 
-        writeln!(f, "[Support Size: {} | # Observations: {}]", self.histogram.support_size(), self.histogram.total)?;
+        writeln!(
+            f,
+            "[Support Size: {} | # Observations: {}]",
+            self.histogram.support_size(),
+            self.histogram.total
+        )?;
 
         Ok(())
     }
