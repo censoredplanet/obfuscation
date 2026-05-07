@@ -304,6 +304,7 @@ fn run_dump_csv(args: &DumpCsvArgs) -> Result<(), Box<dyn Error>> {
     let max_packets = args.max_packets;
     let num_flows = args.num_flows;
     let flow_filter = &args.flow_filter;
+    let include_rtt = args.include_rtt;
 
     let encoding = if args.quantized {
         FeatureEncoding::Quantized
@@ -347,14 +348,22 @@ fn run_dump_csv(args: &DumpCsvArgs) -> Result<(), Box<dyn Error>> {
                 flow.strip_tls_handshake();
             }
 
+            let rtt = {
+                let client_to_observer =
+                    (flow.base.ack_ts - flow.base.synack_ts) / 2.0;
+                (flow.base.synack_ts - flow.base.syn_ts) + (2.0 * client_to_observer)
+            };
             flow.rtt_normalize();
 
             if flow.packets.len() < min_packets {
                 return std::ops::ControlFlow::Continue(());
             }
 
+            if include_rtt {
+                emitter.push_numeric(rtt);
+            }
             emit_flow_features(&flow, max_packets, &quantizer, &mut emitter, encoding);
-            while emitter.record.len() < feature_width {
+            while emitter.record.len() < feature_width + include_rtt as usize {
                 emitter.push_feature(-1.0);
             }
 

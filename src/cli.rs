@@ -249,6 +249,9 @@ pub struct DumpCsvArgs {
     /// Emit quantized bin ids instead of raw feature values
     #[arg(long)]
     pub quantized: bool,
+    /// Prepend the RTT (in seconds) as the first column of each row
+    #[arg(long)]
+    pub include_rtt: bool,
     #[arg(long)]
     pub output: PathBuf,
 }

@@ -28,10 +28,27 @@ pub struct FeatureStats {
 }
 
 impl FeatureStats {
+    pub fn for_feature(feature: &FeatureKind) -> Self {
+        Self {
+            count: 0,
+            mean: 0.0,
+            m2: 0.0,
+            min: f64::INFINITY,
+            max: f64::NEG_INFINITY,
+            tdigest: TDigest::new_with_size(100),
+            frequencies: if matches!(feature, FeatureKind::Size) {
+                vec![0; FeatureKind::Size.domain().max as usize]
+            } else {
+                Vec::new()
+            },
+            buffer: Vec::with_capacity(TDIGEST_BUFFER_SIZE),
+        }
+    }
+
     pub fn update(&mut self, value: f64) {
         self.count += 1;
 
-        if value as usize > 0 && value as usize <= 1460 {
+        if !self.frequencies.is_empty() && value as usize > 0 && value as usize <= 1460 {
             self.frequencies[value as usize - 1] += 1;
         }
 
@@ -75,6 +92,10 @@ impl FeatureStats {
     }
 
     pub fn iqr2(&self) -> f64 {
+        if self.frequencies.is_empty() {
+            return 0.0;
+        }
+
         let quantile = |q: f64| -> usize {
             assert!(q <= 1.0, "quantile must be less than 1");
             let threshold = (self.count as f64 * q) as usize;
@@ -97,16 +118,7 @@ impl FeatureStats {
 
 impl Default for FeatureStats {
     fn default() -> Self {
-        Self {
-            count: 0,
-            mean: 0.0,
-            m2: 0.0,
-            min: f64::INFINITY,
-            max: f64::NEG_INFINITY,
-            tdigest: TDigest::new_with_size(100),
-            frequencies: vec![0; FeatureKind::Size.domain().max as usize],
-            buffer: Vec::with_capacity(TDIGEST_BUFFER_SIZE),
-        }
+        Self::for_feature(&FeatureKind::Size)
     }
 }
 
@@ -141,10 +153,16 @@ impl Merge for FeatureStats {
         self.min = self.min.min(other.min);
         self.max = self.max.max(other.max);
 
-        self.frequencies
-            .iter_mut()
-            .zip(other.frequencies.iter())
-            .for_each(|(a, b)| *a += b);
+        if self.frequencies.is_empty() {
+            if !other.frequencies.is_empty() {
+                self.frequencies = other.frequencies.clone();
+            }
+        } else if !other.frequencies.is_empty() {
+            self.frequencies
+                .iter_mut()
+                .zip(other.frequencies.iter())
+                .for_each(|(a, b)| *a += b);
+        }
 
         self.tdigest = TDigest::merge_digests(vec![self.tdigest.clone(), other.tdigest.clone()]);
         self.buffer.extend_from_slice(&other.buffer);
@@ -174,7 +192,7 @@ impl TrafficStats {
         for feature in FeatureKind::iter() {
             let stats_vec = self.stats.entry(feature.clone()).or_default();
             if stats_vec.len() < flow_length {
-                stats_vec.resize_with(flow_length, FeatureStats::default);
+                stats_vec.resize_with(flow_length, || FeatureStats::for_feature(&feature));
             }
 
             for (i, packet) in flow.packets.iter().enumerate() {
@@ -227,7 +245,7 @@ impl Merge for TrafficStats {
             let other_stats = &other.stats[feature];
 
             let max_len = stats.len().max(other_stats.len());
-            stats.resize_with(max_len, FeatureStats::default);
+            stats.resize_with(max_len, || FeatureStats::for_feature(feature));
 
             for (i, other_stat) in other_stats.iter().enumerate() {
                 stats[i].merge_in_place(other_stat);
