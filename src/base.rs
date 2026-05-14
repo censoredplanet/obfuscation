@@ -1,21 +1,25 @@
-use std::fs::File;
-use std::error::Error;
-use hashbrown::HashMap;
-use serde::{Serialize, Deserialize};
-use rayon::prelude::*;
 use flate2::read::GzDecoder;
+use hashbrown::HashMap;
+use memmap2::Mmap;
+use rayon::prelude::*;
+use serde::de::{SeqAccess, Visitor};
+use serde::{Deserialize, Serialize};
+use std::error::Error;
+use std::fs::File;
+use std::ops::ControlFlow;
+use std::path::Path;
 use zstd::stream::read::Decoder;
 
+use crate::feature::{EmitFeatures, FeatureEmitter, FeatureKind};
 use crate::merge::PostcardIO;
-use crate::feature::{FeatureKind, EmitFeatures, FeatureEmitter};
-use crate::quantization::{Quantization, FlowQuantizer};
+use crate::quantization::{FlowQuantizer, Quantization};
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub struct Packet {
     pub timestamp: f64,
     pub direction: f64,
     pub size: f64,
-    pub entropy: f64
+    pub entropy: f64,
 }
 
 impl Packet {
@@ -24,7 +28,7 @@ impl Packet {
             FeatureKind::Timestamp => self.timestamp,
             FeatureKind::Direction => self.direction,
             FeatureKind::Size => self.size,
-            FeatureKind::Entropy => self.entropy
+            FeatureKind::Entropy => self.entropy,
         }
     }
 }
@@ -37,7 +41,7 @@ pub enum TLSVersion {
     TLSv12,
     TLSv13,
     Unknown64282, // A Facebook-created variant of TLS 1.3
-    Other // catch-all for now
+    Other,        // catch-all for now
 }
 
 impl From<&[u8]> for TLSVersion {
@@ -57,10 +61,10 @@ impl From<&[u8]> for TLSVersion {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FlowMetadata {
     pub conn_id: Vec<u8>,
-    pub syn_ts:	f64,
+    pub syn_ts: f64,
     pub synack_ts: f64,
     pub ack_ts: f64,
-    pub len: usize
+    pub len: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -69,16 +73,16 @@ pub enum ProtocolMetadata {
         version: TLSVersion,
         client_hello: usize,
         server_hello: usize,
-        ssl_est: usize
+        ssl_est: usize,
     },
-    Raw
+    Raw,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Flow {
     pub base: FlowMetadata,
     pub proto: ProtocolMetadata,
-    pub packets: Vec<Packet>
+    pub packets: Vec<Packet>,
 }
 
 impl Flow {
@@ -89,8 +93,12 @@ impl Flow {
         let mut prev_c2s_ts = None;
         let mut prev_s2c_ts = None;
         for packet in self.packets.iter_mut() {
-            let prev_ts = if packet.direction > 0.5 { &mut prev_c2s_ts } else { &mut prev_s2c_ts };
-    
+            let prev_ts = if packet.direction > 0.5 {
+                &mut prev_c2s_ts
+            } else {
+                &mut prev_s2c_ts
+            };
+
             let iat = match *prev_ts {
                 None => 0.0,
                 Some(ts) => packet.timestamp - ts,
@@ -109,6 +117,36 @@ impl Flow {
             self.base.len = self.base.len - (ssl_est + 1);
         }
     }
+
+    pub fn emit_quantized_features(
+        &self,
+        num_packets: usize,
+        quantizer: &FlowQuantizer,
+        emitter: &mut dyn FeatureEmitter<f64>,
+    ) {
+        for (i, packet) in self.packets.iter().take(num_packets).enumerate() {
+            let packet_quantizer = quantizer.quantizer_at(i);
+            let projection = packet_quantizer.quantize_packet(packet);
+
+            if !matches!(packet_quantizer.timestamp.quantization, Quantization::Mask) {
+                emitter.push_feature(projection.timestamp.to_i64() as f64);
+            }
+
+            if !matches!(packet_quantizer.size.quantization, Quantization::Mask) {
+                let size_bin = projection.size.to_i64() as f64;
+                let signed_size_bin =
+                    if matches!(packet_quantizer.direction.quantization, Quantization::Mask)
+                        || packet.direction > 0.5
+                    {
+                        size_bin
+                    } else {
+                        -size_bin
+                    };
+
+                emitter.push_feature(signed_size_bin);
+            }
+        }
+    }
 }
 
 impl EmitFeatures for Flow {
@@ -119,12 +157,19 @@ impl EmitFeatures for Flow {
     }
 
     // In the future we don't need the full quantizer, just a feature mask
-    fn emit_features(&self, num_packets: usize, quantizer: &FlowQuantizer, emitter: &mut dyn FeatureEmitter<f64>) {
+    fn emit_features(
+        &self,
+        num_packets: usize,
+        quantizer: &FlowQuantizer,
+        emitter: &mut dyn FeatureEmitter<f64>,
+    ) {
         for (i, packet) in self.packets.iter().take(num_packets).enumerate() {
             let packet_quantizer = quantizer.quantizer_at(i);
 
-            let timestamp_masked = matches!(packet_quantizer.timestamp.quantization, Quantization::Mask);
-            let direction_masked = matches!(packet_quantizer.direction.quantization, Quantization::Mask);
+            let timestamp_masked =
+                matches!(packet_quantizer.timestamp.quantization, Quantization::Mask);
+            let direction_masked =
+                matches!(packet_quantizer.direction.quantization, Quantization::Mask);
             let size_masked = matches!(packet_quantizer.size.quantization, Quantization::Mask);
 
             if !timestamp_masked {
@@ -152,7 +197,7 @@ pub enum FlowFilterPredicate {
     None,
     MinTLSDataPackets(usize),
     TLSVersionEq(TLSVersion),
-    And(Box<FlowFilterPredicate>, Box<FlowFilterPredicate>)
+    And(Box<FlowFilterPredicate>, Box<FlowFilterPredicate>),
 }
 
 impl FlowFilterPredicate {
@@ -162,38 +207,32 @@ impl FlowFilterPredicate {
             FlowFilterPredicate::None => true,
             FlowFilterPredicate::MinTLSDataPackets(n) => {
                 let tls_data_packets = match &flow.proto {
-                    ProtocolMetadata::TLSMetadata { ssl_est, .. } => {
-                        flow.base.len - (*ssl_est + 1)
-                    }
+                    ProtocolMetadata::TLSMetadata { ssl_est, .. } => flow.base.len - (*ssl_est + 1),
                     ProtocolMetadata::Raw => return true,
                 };
 
                 tls_data_packets >= *n
+            }
+            FlowFilterPredicate::TLSVersionEq(tls_version) => match &flow.proto {
+                ProtocolMetadata::Raw => false,
+                ProtocolMetadata::TLSMetadata { version, .. } => version == tls_version,
             },
-            FlowFilterPredicate::TLSVersionEq(tls_version) => {
-                match &flow.proto {
-                    ProtocolMetadata::Raw => false,
-                    ProtocolMetadata::TLSMetadata { version, .. } => version == tls_version
-                }
-            },
-            FlowFilterPredicate::And(left, right) => left.matches(flow) && right.matches(flow)
+            FlowFilterPredicate::And(left, right) => left.matches(flow) && right.matches(flow),
         }
     }
 }
 
 pub fn csv_reader(path: &str) -> Result<csv::Reader<Box<dyn std::io::Read>>, Box<dyn Error>> {
     let file = File::open(path)?;
-    
+
     let reader: Box<dyn std::io::Read> = if path.ends_with(".gz") {
         Box::new(GzDecoder::new(file))
-    } 
-    else if path.ends_with(".zst") {
+    } else if path.ends_with(".zst") {
         Box::new(Decoder::new(file)?.single_frame())
-    }
-    else {
+    } else {
         Box::new(file)
     };
-    
+
     Ok(csv::ReaderBuilder::new()
         .delimiter(b'\t')
         .quoting(false)
@@ -207,9 +246,12 @@ pub fn to_key(id: &[u8]) -> u64 {
     u64::from_ne_bytes(id[..8].try_into().unwrap())
 }
 
-pub fn read_flows(flows_csv_path: &str, packets_csv_path: &str) -> Result<Vec<Flow>, Box<dyn Error>> {
+pub fn read_flows(
+    flows_csv_path: &str,
+    packets_csv_path: &str,
+) -> Result<Vec<Flow>, Box<dyn Error>> {
     let mut flows_map: HashMap<u64, Flow> = HashMap::new();
-    
+
     let mut flows_reader = csv_reader(flows_csv_path)?;
     let mut raw_record = csv::ByteRecord::new();
 
@@ -222,21 +264,22 @@ pub fn read_flows(flows_csv_path: &str, packets_csv_path: &str) -> Result<Vec<Fl
                 base: FlowMetadata {
                     conn_id: raw_record.get(0).unwrap().to_vec(),
                     syn_ts: str::from_utf8_unchecked(raw_record.get(1).unwrap()).parse::<f64>()?,
-                    synack_ts: str::from_utf8_unchecked(raw_record.get(2).unwrap()).parse::<f64>()?,
+                    synack_ts: str::from_utf8_unchecked(raw_record.get(2).unwrap())
+                        .parse::<f64>()?,
                     ack_ts: str::from_utf8_unchecked(raw_record.get(3).unwrap()).parse::<f64>()?,
-                    len: flow_length
+                    len: flow_length,
                 },
                 proto: ProtocolMetadata::TLSMetadata {
                     version: raw_record.get(4).unwrap().into(),
                     client_hello: atoi::atoi(raw_record.get(5).unwrap()).unwrap(),
                     server_hello: atoi::atoi(raw_record.get(6).unwrap()).unwrap(),
-                    ssl_est: atoi::atoi(raw_record.get(7).unwrap()).unwrap()
+                    ssl_est: atoi::atoi(raw_record.get(7).unwrap()).unwrap(),
                 },
-                packets: Vec::with_capacity(flow_length)
+                packets: Vec::with_capacity(flow_length),
             }
         };
 
-        flows_map.insert(to_key(&flow.base.conn_id), flow);   
+        flows_map.insert(to_key(&flow.base.conn_id), flow);
     }
 
     println!("Loaded connections!");
@@ -245,7 +288,7 @@ pub fn read_flows(flows_csv_path: &str, packets_csv_path: &str) -> Result<Vec<Fl
 
     let mut curr_conn = None;
     let mut packets = Vec::with_capacity(50);
-    
+
     packets_reader.byte_headers()?;
     while packets_reader.read_byte_record(&mut raw_record)? {
         let conn_id = to_key(&raw_record.get(0).unwrap());
@@ -255,18 +298,19 @@ pub fn read_flows(flows_csv_path: &str, packets_csv_path: &str) -> Result<Vec<Fl
                 timestamp: str::from_utf8_unchecked(raw_record.get(2).unwrap()).parse::<f64>()?,
                 direction: str::from_utf8_unchecked(raw_record.get(3).unwrap()).parse::<f64>()?,
                 size: str::from_utf8_unchecked(raw_record.get(4).unwrap()).parse::<f64>()?,
-                entropy: str::from_utf8_unchecked(raw_record.get(5).unwrap()).parse::<f64>()?
+                entropy: str::from_utf8_unchecked(raw_record.get(5).unwrap()).parse::<f64>()?,
             }
         };
 
         match curr_conn {
-            Some(id) if id == conn_id => { packets.push(packet); }
+            Some(id) if id == conn_id => {
+                packets.push(packet);
+            }
             Some(id) => {
                 // flush previous run
                 if let Some(flow) = flows_map.get_mut(&id) {
                     flow.packets.append(&mut packets);
-                }
-                else {
+                } else {
                     packets.clear();
                 }
 
@@ -285,14 +329,60 @@ pub fn read_flows(flows_csv_path: &str, packets_csv_path: &str) -> Result<Vec<Fl
     }
 
     // Quality check: ensure that the flow length matches the number of packets
-    let flows = flows_map.into_par_iter()
-                .filter(|(_, v)| v.base.len == v.packets.len())
-                .map(|(_, v)| v)
-                .collect::<Vec<_>>();
-    
+    let flows = flows_map
+        .into_par_iter()
+        .filter(|(_, v)| v.base.len == v.packets.len())
+        .map(|(_, v)| v)
+        .collect::<Vec<_>>();
+
     println!("{}", flows.len());
 
     Ok(flows)
 }
 
 pub const MSS: usize = 1460;
+
+/// Stream Flow values from a postcard-serialized `Vec<Flow>` file, one at a time.
+///
+/// The file is memory-mapped so the OS pages bytes in on demand rather than
+/// allocating a heap buffer for the whole file, and elements are deserialized
+/// individually so peak allocation is a single `Flow`. The closure returns
+/// `ControlFlow::Break(())` to stop early; remaining bytes in the file are
+/// never touched. No format change: this reads the same `Vec<Flow>` layout
+/// written by `PostcardIO::write`.
+pub fn stream_flows<F>(path: &Path, mut each: F) -> Result<(), Box<dyn Error>>
+where
+    F: FnMut(Flow) -> ControlFlow<()>,
+{
+    let file = File::open(path)?;
+    let mmap = unsafe { Mmap::map(&file)? };
+    #[cfg(unix)]
+    let _ = mmap.advise(memmap2::Advice::Sequential);
+
+    let mut de = postcard::Deserializer::from_bytes(&mmap[..]);
+
+    struct FlowVisitor<'a, F: FnMut(Flow) -> ControlFlow<()>> {
+        each: &'a mut F,
+    }
+
+    impl<'de, 'a, F: FnMut(Flow) -> ControlFlow<()>> Visitor<'de> for FlowVisitor<'a, F> {
+        type Value = ();
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("Vec<Flow>")
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+            while let Some(flow) = seq.next_element::<Flow>()? {
+                if (self.each)(flow).is_break() {
+                    break;
+                }
+            }
+            Ok(())
+        }
+    }
+
+    use serde::Deserializer;
+    de.deserialize_seq(FlowVisitor { each: &mut each })?;
+    Ok(())
+}
