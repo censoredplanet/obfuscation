@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use serde::{Serialize, Deserialize};
-use enumflags2::{bitflags};
+use enumflags2::bitflags;
+use serde::{Deserialize, Serialize};
 
 use crate::base::MSS;
 use crate::quantization::FlowQuantizer;
@@ -33,7 +33,7 @@ impl FromStr for FeatureKind {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RandomVariableDomain {
     pub min: f64,
-    pub max: f64
+    pub max: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -55,10 +55,16 @@ impl FeatureKind {
 
     pub fn domain(&self) -> RandomVariableDomain {
         match &self {
-            FeatureKind::Timestamp => RandomVariableDomain { min: 0.0, max: f64::INFINITY },
+            FeatureKind::Timestamp => RandomVariableDomain {
+                min: 0.0,
+                max: f64::INFINITY,
+            },
             FeatureKind::Direction => RandomVariableDomain { min: 0.0, max: 1.0 },
-            FeatureKind::Size      => RandomVariableDomain { min: 1.0,  max: MSS as f64 },
-            FeatureKind::Entropy   => RandomVariableDomain { min: 0.0,  max: 8.0 },
+            FeatureKind::Size => RandomVariableDomain {
+                min: 1.0,
+                max: MSS as f64,
+            },
+            FeatureKind::Entropy => RandomVariableDomain { min: 0.0, max: 8.0 },
         }
     }
 
@@ -74,7 +80,12 @@ pub trait EmitFeatures {
     type Value;
 
     fn id(&self) -> &Vec<u8>;
-    fn emit_features(&self, num_packets: usize, quantizer: &FlowQuantizer, emitter: &mut dyn FeatureEmitter<Self::Value>);
+    fn emit_features(
+        &self,
+        num_packets: usize,
+        quantizer: &FlowQuantizer,
+        emitter: &mut dyn FeatureEmitter<Self::Value>,
+    );
 }
 
 pub trait FeatureEmitter<T> {

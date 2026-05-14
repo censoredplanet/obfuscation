@@ -1,10 +1,10 @@
 use std::collections::VecDeque;
 
-use serde::{Serialize, Deserialize};
-use rv::prelude::*;
 use rayon::prelude::*;
+use rv::prelude::*;
+use serde::{Deserialize, Serialize};
 
-use crate::base::{Packet, ProtocolMetadata, Flow};
+use crate::base::{Flow, Packet, ProtocolMetadata};
 use crate::feature::*;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -12,13 +12,13 @@ pub enum DistributionFamily {
     Fixed(f64),
     Uniform { min: f64, max: f64 },
     Normal { mu: f64, sigma: f64 },
-    Exponential { lambda: f64, shift: f64 }
+    Exponential { lambda: f64, shift: f64 },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum TruncationMode {
     Full,
-    Truncated
+    Truncated,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -39,8 +39,8 @@ impl Sampler {
             }
             DistributionFamily::Normal { mu, sigma } => {
                 let distribution = Gaussian::new(*mu, *sigma).unwrap();
-                distribution.draw(rng)   
-            },
+                distribution.draw(rng)
+            }
             DistributionFamily::Exponential { lambda, shift } => {
                 let distribution = Exponential::new(*lambda).unwrap();
                 let x: f64 = distribution.draw(rng);
@@ -59,7 +59,7 @@ impl Sampler {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum TransformRule {
     Delta(Sampler),
-    Absolute(Sampler)
+    Absolute(Sampler),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -118,7 +118,7 @@ pub struct Rule {
     pub timestamp: Option<TransformRule>,
     pub direction: Option<Sampler>,
     pub size: Option<TransformRule>,
-    pub entropy: Option<Sampler>
+    pub entropy: Option<Sampler>,
 }
 
 impl Rule {
@@ -126,54 +126,67 @@ impl Rule {
         let target_timestamp = match &self.timestamp {
             None => packet.timestamp,
             Some(TransformRule::Delta(d)) => packet.timestamp + d.sample(rng),
-            Some(TransformRule::Absolute(d)) => d.sample(rng)
+            Some(TransformRule::Absolute(d)) => d.sample(rng),
         };
-        let target_direction = self.direction.as_ref().map_or(packet.direction, |d| d.sample(rng));
+        let target_direction = self
+            .direction
+            .as_ref()
+            .map_or(packet.direction, |d| d.sample(rng));
         let target_size = match &self.size {
             None => packet.size,
             Some(TransformRule::Delta(d)) => {
                 let size_domain = FeatureKind::Size.domain();
                 (packet.size + d.sample(rng)).clamp(size_domain.min, size_domain.max)
-            },
-            Some(TransformRule::Absolute(d)) => d.sample(rng)
+            }
+            Some(TransformRule::Absolute(d)) => d.sample(rng),
         };
-        let target_entropy = self.entropy.as_ref().map_or(packet.entropy, |d| d.sample(rng));
+        let target_entropy = self
+            .entropy
+            .as_ref()
+            .map_or(packet.entropy, |d| d.sample(rng));
 
         // If we do not have data we can delay at the target endpoint, then we need to
         // insert a dummy packet.
         if packet.timestamp > target_timestamp || packet.direction != target_direction {
-            return (Packet {
-                timestamp: target_timestamp,
-                direction: target_direction,
-                size: target_size,
-                entropy: target_entropy // always possible under any size as long as all data is junk
-            }, Some(packet.clone()));
-        }
-        else if packet.size <= target_size {
+            return (
+                Packet {
+                    timestamp: target_timestamp,
+                    direction: target_direction,
+                    size: target_size,
+                    entropy: target_entropy, // always possible under any size as long as all data is junk
+                },
+                Some(packet.clone()),
+            );
+        } else if packet.size <= target_size {
             // Pad packet to target size. No "leftover" packet.
-            return (Packet {
-                timestamp: target_timestamp,
-                direction: target_direction,
-                size: target_size,
-                entropy: target_entropy // TODO: check that entropy can be satisfied
-            }, None);
-        }
-        else {
+            return (
+                Packet {
+                    timestamp: target_timestamp,
+                    direction: target_direction,
+                    size: target_size,
+                    entropy: target_entropy, // TODO: check that entropy can be satisfied
+                },
+                None,
+            );
+        } else {
             // If packet size is smaller than target size, the packet must be split
             // in two. The first packet receives all of the target properties, while
             // the second packet retains the payload size and entropy properties of
             // the original packet (until it undergoes obfuscation).
-            return (Packet {
-                timestamp: target_timestamp,
-                direction: target_direction,
-                size: target_size,
-                entropy: target_entropy // TODO: check that entropy can be satisfied
-            }, Some(Packet {
-                timestamp: target_timestamp,
-                direction: target_direction,
-                size: packet.size - target_size,
-                entropy: packet.entropy
-            }));
+            return (
+                Packet {
+                    timestamp: target_timestamp,
+                    direction: target_direction,
+                    size: target_size,
+                    entropy: target_entropy, // TODO: check that entropy can be satisfied
+                },
+                Some(Packet {
+                    timestamp: target_timestamp,
+                    direction: target_direction,
+                    size: packet.size - target_size,
+                    entropy: packet.entropy,
+                }),
+            );
         }
     }
 }
@@ -182,21 +195,21 @@ impl Rule {
 pub struct ConditionalRule {
     pub condition: RuleCondition,
     pub probability: f64,
-    pub rule: Rule
+    pub rule: Rule,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum DurationPolicy {
     MatchOriginalCount,
-    MaxTicks(usize)
+    MaxTicks(usize),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(try_from = "String")]
 pub enum TLSMode {
-    Outer,      // Preserve existing handshake; obfuscate only post-handshake data
-    Inner,      // Ignore handshake; treat entire flow as data
-    TLSInTLS,   // Prepend sampled outer handshake; preserve inner TLS
+    Outer,    // Preserve existing handshake; obfuscate only post-handshake data
+    Inner,    // Ignore handshake; treat entire flow as data
+    TLSInTLS, // Prepend sampled outer handshake; preserve inner TLS
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -204,12 +217,12 @@ pub struct Obfuscator {
     pub rules: Vec<ConditionalRule>,
     pub default: Rule,
     pub duration: DurationPolicy,
-    pub tls_mode: TLSMode
+    pub tls_mode: TLSMode,
 }
 
 #[derive(Debug, Clone)]
 pub struct FlowContext {
-    pub ssl_est: Option<usize>
+    pub ssl_est: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -217,26 +230,27 @@ pub struct PacketContext {
     pub is_handshake_packet: bool,
     pub index: usize,
     pub client_index: usize,
-    pub server_index: usize
+    pub server_index: usize,
 }
 
 impl Obfuscator {
     pub fn random(mode: TLSMode) -> Self {
         let default_rule = Rule {
-            timestamp: Some(TransformRule::Delta(
-                RandomDistribution.generate(
-                    // max inter-arrival time delay allowed by obfs4:
-                    // https://github.com/Yawning/obfs4/blob/master/transports/obfs4/obfs4.go#L563
-                    RandomVariableDomain { min: -0.01, max: 0.01 },
-                    FeatureKind::Timestamp.value_type(),
-                    &mut rand::rng()
+            timestamp: Some(TransformRule::Delta(RandomDistribution.generate(
+                // max inter-arrival time delay allowed by obfs4:
+                // https://github.com/Yawning/obfs4/blob/master/transports/obfs4/obfs4.go#L563
+                RandomVariableDomain {
+                    min: -0.01,
+                    max: 0.01,
+                },
+                FeatureKind::Timestamp.value_type(),
+                &mut rand::rng(),
             ))),
             direction: None,
-            size: Some(TransformRule::Absolute(
-                RandomDistribution.generate(
-                    FeatureKind::Size.domain(),
-                    FeatureKind::Size.value_type(),
-                    &mut rand::rng()
+            size: Some(TransformRule::Absolute(RandomDistribution.generate(
+                FeatureKind::Size.domain(),
+                FeatureKind::Size.value_type(),
+                &mut rand::rng(),
             ))),
             entropy: None,
         };
@@ -245,29 +259,33 @@ impl Obfuscator {
         first_packet_rule.timestamp = None;
 
         Obfuscator {
-            rules: vec![
-                ConditionalRule {
-                    condition: RuleCondition {
-                        indices: Some(0..1),
-                        periodic_indices: None,
-                        c2s_indices: None,
-                        s2c_indices: None,
-                        ssl_established: None
-                    },
-                    probability: 1.0,
-                    rule: first_packet_rule
-                }
-            ],
+            rules: vec![ConditionalRule {
+                condition: RuleCondition {
+                    indices: Some(0..1),
+                    periodic_indices: None,
+                    c2s_indices: None,
+                    s2c_indices: None,
+                    ssl_established: None,
+                },
+                probability: 1.0,
+                rule: first_packet_rule,
+            }],
             default: default_rule,
             duration: DurationPolicy::MatchOriginalCount,
-            tls_mode: mode
+            tls_mode: mode,
         }
     }
 
     // TODO: better than O(rules)
-    fn select_rule<R: rand::Rng>(&self, packet: &Packet, packet_ctx: &PacketContext, rng: &mut R) -> &Rule {
+    fn select_rule<R: rand::Rng>(
+        &self,
+        packet: &Packet,
+        packet_ctx: &PacketContext,
+        rng: &mut R,
+    ) -> &Rule {
         for rule in &self.rules {
-            if rule.condition.matches(packet, packet_ctx) && rng.random::<f64>() < rule.probability {
+            if rule.condition.matches(packet, packet_ctx) && rng.random::<f64>() < rule.probability
+            {
                 return &rule.rule;
             }
         }
@@ -285,17 +303,19 @@ impl Obfuscator {
 
         let timesteps = match &self.duration {
             DurationPolicy::MatchOriginalCount => packets.len(),
-            DurationPolicy::MaxTicks(timestep) => *timestep
+            DurationPolicy::MaxTicks(timestep) => *timestep,
         };
         let mut client_index = 0;
         let mut server_index = 0;
-        
+
         // We do not loop until queue is empty because ability to
         // insert dummy packets does not guarantee queue size shrinks
         for timestep in 0..timesteps {
             // if there is no packet, we can insert a dummy packet,
             // but only if the dummy packet is drawn from a distribution
-            let Some(mut packet) = queue.pop_front() else { break; };
+            let Some(mut packet) = queue.pop_front() else {
+                break;
+            };
 
             packet.timestamp = packet.timestamp.max(prev_timestamp); // enforce timestamp monotonicity
 
@@ -306,11 +326,12 @@ impl Obfuscator {
                 },
                 index: timestep,
                 client_index: client_index,
-                server_index: server_index
+                server_index: server_index,
             };
 
-            let (mut emitted, requeue) = self.select_rule(&packet, &packet_ctx, &mut rng)
-                                        .apply(&packet, &mut rng);
+            let (mut emitted, requeue) = self
+                .select_rule(&packet, &packet_ctx, &mut rng)
+                .apply(&packet, &mut rng);
 
             // enforce timestamp monotonicity (if we emitted a dummy packet, its timestamp
             // is less than packet timestamp, but make sure it is not also less than
@@ -327,10 +348,10 @@ impl Obfuscator {
             match packet.direction as u8 {
                 0 => server_index += 1,
                 1 => client_index += 1,
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         }
-        
+
         obfuscated
     }
 
@@ -344,24 +365,33 @@ impl Obfuscator {
                 let data = &obfuscated.packets[(*ssl_est + 1)..];
 
                 let obfuscated_data = self.obfuscate(data, &FlowContext { ssl_est: None });
-                
+
                 obfuscated.packets = [handshake, &obfuscated_data].concat();
-            },
+            }
             (ProtocolMetadata::TLSMetadata { ssl_est, .. }, TLSMode::Inner) => {
-                obfuscated.packets = self.obfuscate(&obfuscated.packets, &FlowContext { ssl_est: Some(*ssl_est) });
+                obfuscated.packets = self.obfuscate(
+                    &obfuscated.packets,
+                    &FlowContext {
+                        ssl_est: Some(*ssl_est),
+                    },
+                );
                 obfuscated.proto = ProtocolMetadata::Raw;
             }
             (ProtocolMetadata::Raw, _) => {
-                obfuscated.packets = self.obfuscate(&obfuscated.packets, &FlowContext { ssl_est: None });
-            },
-            (_, _) => unreachable!()
+                obfuscated.packets =
+                    self.obfuscate(&obfuscated.packets, &FlowContext { ssl_est: None });
+            }
+            (_, _) => unreachable!(),
         };
 
         obfuscated
     }
 
     pub fn obfuscate_flows<'a>(&self, flows: &[Flow]) -> Vec<Flow> {
-        flows.par_iter().map(|flow| self.obfuscate_flow(flow)).collect()
+        flows
+            .par_iter()
+            .map(|flow| self.obfuscate_flow(flow))
+            .collect()
     }
 }
 
@@ -373,34 +403,48 @@ pub struct RandomDistribution;
 
 impl RandomDistribution {
     // TODO: make the closures functions
-    pub fn generate<R: rand::Rng>(&self, domain: RandomVariableDomain, value_type: FeatureValueType, rng: &mut R) -> Sampler {
+    pub fn generate<R: rand::Rng>(
+        &self,
+        domain: RandomVariableDomain,
+        value_type: FeatureValueType,
+        rng: &mut R,
+    ) -> Sampler {
         let build_random_fixed = |rng: &mut R| {
             let value = rng.random_range(domain.min..domain.max);
 
             DistributionFamily::Fixed(value)
         };
-        
+
         let build_random_uniform = |rng: &mut R| {
             let a = rng.random_range(domain.min..domain.max);
             let b = rng.random_range(domain.min..domain.max);
 
-            DistributionFamily::Uniform { min: a.min(b), max: a.max(b) }
+            DistributionFamily::Uniform {
+                min: a.min(b),
+                max: a.max(b),
+            }
         };
-        
+
         let build_random_normal = |rng: &mut R| {
             let mu = rng.random_range(domain.min..domain.max);
             let dist_to_min = mu - domain.min;
             let dist_to_max = domain.max - mu;
             let sigma = dist_to_min.max(dist_to_max) / 3.0;
 
-            DistributionFamily::Normal { mu: mu, sigma: sigma }
+            DistributionFamily::Normal {
+                mu: mu,
+                sigma: sigma,
+            }
         };
 
         let build_random_exponential = |rng: &mut R| {
             let width = domain.max - domain.min;
             let lambda = rng.random_range(1.0 / width..5.81 / width);
 
-            DistributionFamily::Exponential { lambda: lambda, shift: -domain.min }
+            DistributionFamily::Exponential {
+                lambda: lambda,
+                shift: -domain.min,
+            }
         };
 
         Sampler {
@@ -409,11 +453,11 @@ impl RandomDistribution {
                 1 => build_random_uniform(rng),
                 2 => build_random_normal(rng),
                 3 => build_random_exponential(rng),
-                _ => unreachable!()
+                _ => unreachable!(),
             },
             domain: domain,
             support_type: value_type,
-            truncation: TruncationMode::Full
+            truncation: TruncationMode::Full,
         }
     }
 }
