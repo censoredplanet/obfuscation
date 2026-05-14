@@ -56,8 +56,7 @@ where
     }
 }
 
-// In the future, Flow and Obfuscator should implement this trait
-// to allow streaming workloads and reduce memory pressure
+// In the future, Flow should implement this trait to allow streaming workloads and reduce memory pressure
 pub trait PacketSource {
     fn next(&mut self) -> Option<Packet>;
 }
