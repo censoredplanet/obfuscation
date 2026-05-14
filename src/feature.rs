@@ -13,7 +13,6 @@ pub enum FeatureKind {
     Timestamp,
     Direction,
     Size,
-    Entropy,
 }
 
 impl FromStr for FeatureKind {
@@ -24,7 +23,6 @@ impl FromStr for FeatureKind {
             "timestamp" => Ok(Self::Timestamp),
             "direction" => Ok(Self::Direction),
             "size" => Ok(Self::Size),
-            "entropy" => Ok(Self::Entropy),
             _ => Err(format!("invalid feature: {}", s)),
         }
     }
@@ -48,7 +46,6 @@ impl FeatureKind {
             FeatureKind::Timestamp,
             FeatureKind::Direction,
             FeatureKind::Size,
-            FeatureKind::Entropy,
         ]
         .into_iter()
     }
@@ -64,13 +61,12 @@ impl FeatureKind {
                 min: 1.0,
                 max: MSS as f64,
             },
-            FeatureKind::Entropy => RandomVariableDomain { min: 0.0, max: 8.0 },
         }
     }
 
     pub fn value_type(&self) -> FeatureValueType {
         match &self {
-            FeatureKind::Timestamp | FeatureKind::Entropy => FeatureValueType::Continuous,
+            FeatureKind::Timestamp => FeatureValueType::Continuous,
             FeatureKind::Direction | FeatureKind::Size => FeatureValueType::Discrete,
         }
     }

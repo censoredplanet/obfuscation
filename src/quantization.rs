@@ -43,16 +43,14 @@ pub struct PacketProjection {
     pub timestamp: FeatureValue,
     pub direction: FeatureValue,
     pub size: FeatureValue,
-    pub entropy: FeatureValue,
 }
 
 impl PacketProjection {
-    pub fn to_array(&self) -> [i64; 4] {
+    pub fn to_array(&self) -> [i64; 3] {
         [
             self.timestamp.to_i64(),
             self.direction.to_i64(),
             self.size.to_i64(),
-            self.entropy.to_i64(),
         ]
     }
 }
@@ -72,24 +70,21 @@ impl fmt::Display for PacketProjectionDisplay<'_> {
         if let Some(q) = self.quantizer {
             write!(
                 f,
-                "[t={}:{} d={}:{} s={}:{} e={}:{}]",
+                "[t={}:{} d={}:{} s={}:{}]",
                 self.projection.timestamp,
                 feature_as_interval_str(&self.projection.timestamp, &q.timestamp),
                 self.projection.direction,
                 feature_as_interval_str(&self.projection.direction, &q.direction),
                 self.projection.size,
                 feature_as_interval_str(&self.projection.size, &q.size),
-                self.projection.entropy,
-                feature_as_interval_str(&self.projection.entropy, &q.entropy),
             )
         } else {
             write!(
                 f,
-                "[t={} d={} s={} e={}]",
+                "[t={} d={} s={}]",
                 self.projection.timestamp,
                 self.projection.direction,
                 self.projection.size,
-                self.projection.entropy
             )
         }
     }
@@ -504,7 +499,6 @@ pub struct PacketQuantizer {
     pub timestamp: FeatureQuantizer,
     pub direction: FeatureQuantizer,
     pub size: FeatureQuantizer,
-    pub entropy: FeatureQuantizer,
 }
 
 impl PacketQuantizer {
@@ -519,9 +513,6 @@ impl PacketQuantizer {
             FeatureKind::Size => {
                 self.size = quantizer;
             }
-            FeatureKind::Entropy => {
-                self.entropy = quantizer;
-            }
         }
     }
 
@@ -529,14 +520,12 @@ impl PacketQuantizer {
         (!matches!(self.timestamp.quantization, Quantization::Mask)) as usize
             + (!matches!(self.direction.quantization, Quantization::Mask)) as usize
             + (!matches!(self.size.quantization, Quantization::Mask)) as usize
-            + (!matches!(self.entropy.quantization, Quantization::Mask)) as usize
     }
 
     pub fn num_outcomes(&self) -> usize {
         self.timestamp.num_bins()
             * self.direction.num_bins()
             * self.size.num_bins()
-            * self.entropy.num_bins()
     }
 
     pub fn quantize_packet(&self, packet: &Packet) -> PacketProjection {
@@ -544,7 +533,6 @@ impl PacketQuantizer {
             timestamp: self.timestamp.quantize_feature(packet.timestamp),
             direction: self.direction.quantize_feature(packet.direction),
             size: self.size.quantize_feature(packet.size),
-            entropy: self.entropy.quantize_feature(packet.entropy),
         }
     }
 
@@ -553,7 +541,6 @@ impl PacketQuantizer {
             timestamp: self.timestamp.dequantize(&packet.timestamp, rng),
             direction: self.direction.dequantize(&packet.direction, rng),
             size: self.size.dequantize(&packet.size, rng),
-            entropy: self.entropy.dequantize(&packet.entropy, rng),
         }
     }
 }
@@ -575,10 +562,6 @@ impl Default for PacketQuantizer {
             },
             size: FeatureQuantizer {
                 feature: BoundedFeature::new(FeatureKind::Size),
-                quantization: Quantization::Mask,
-            },
-            entropy: FeatureQuantizer {
-                feature: BoundedFeature::new(FeatureKind::Entropy),
                 quantization: Quantization::Mask,
             },
         }
