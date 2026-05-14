@@ -8,7 +8,6 @@ use winnow::token::literal;
 
 use crate::base::{FlowFilterPredicate, TLSVersion};
 use crate::feature::FeatureKind;
-use crate::obfuscation::TLSMode;
 
 #[derive(Debug, Parser)]
 pub struct Cli {
@@ -25,7 +24,6 @@ pub enum Commands {
     Generate(GenerateArgs),
     #[command(name = "dump-csv")]
     DumpCsv(DumpCsvArgs),
-    Obfuscation(ObfuscationCli),
     Histograms(HistogramsCli),
     Divergence(DivergenceCli),
 }
@@ -38,6 +36,7 @@ pub struct Zeek2FlowsArgs {
     /// Zeek log containing packet features
     #[arg(long)]
     pub packets: String,
+    /// Output path for the binary flows file
     #[arg(long)]
     pub output: PathBuf,
 }
@@ -64,6 +63,7 @@ pub struct StatsComputeArgs {
     #[arg(long, default_value = "tlsDataPackets >= 0")]
     // this is hack for always true, make this better
     pub flow_filter: FlowFilterPredicate,
+    /// Strip TLS handshake packets before computing statistics
     #[arg(long)]
     pub strip_tls_handshake: bool,
     #[arg(long)]
@@ -85,25 +85,32 @@ pub struct StatsBinArgs {
     /// Path to a TrafficStats file
     #[arg(long)]
     pub input: PathBuf,
-    /// A quantizer specification that bins features based on the provided TrafficStats
+    /// Output path for the quantizer (model assumptions JSON)
     #[arg(long)]
     pub output: PathBuf,
+    /// Order of the Markov chain used in the traffic model (0 = i.i.d.)
     #[arg(long, default_value_t = 0)]
     pub markov_order: u32,
+    /// Approximation error bound for quantile estimation (t-digest epsilon)
     #[arg(long, default_value_t = 0.05)]
     pub epsilon: f64,
+    /// Maximum allowed probability mass per quantization bin
     #[arg(long, default_value_t = 0.05)]
     pub delta: f64,
+    /// Features to mask out (exclude) from the quantizer
     #[arg(long)]
     pub mask: Option<Vec<FeatureKind>>,
 }
 
 #[derive(Debug, Args)]
 pub struct StatsDisplayArgs {
+    /// Path to a TrafficStats file
     #[arg(long)]
     pub input: PathBuf,
+    /// Narrow the display to a specific feature kind (e.g. Size, Timestamp)
     #[arg(long)]
     pub feature: Option<FeatureKind>,
+    /// Narrow the display to the stats for a specific packet index
     #[arg(long)]
     pub index: Option<usize>,
 }
@@ -140,23 +147,14 @@ pub struct Model {
 pub struct PipelineConfig {
     pub flow: FlowConfig,
     pub model: Model,
-    pub ml: Option<MLConfig>,
 }
 
 #[derive(Debug, serde::Deserialize)]
 pub struct FlowConfig {
     pub source_a: FlowSource,
     pub strip_tls_handshake: bool,
-    pub obfuscator: Option<ObfuscatorSpec>,
 }
 
-#[derive(Debug, serde::Deserialize)]
-pub struct MLConfig {
-    pub source_b: FlowSource,
-    pub train_proportion: u8,
-    pub features_packet_horizon: usize,
-    pub raw_features: bool,
-}
 
 #[derive(Debug, Parser)]
 pub struct PipelineCli {
@@ -167,13 +165,14 @@ pub struct PipelineCli {
 #[derive(Debug, Subcommand)]
 pub enum PipelineCommand {
     Histograms(PipelineHistogramsArgs),
-    Ml(PipelineMlArgs),
 }
 
 #[derive(Debug, Args)]
 pub struct CommonPipelineArgs {
+    /// Path to a TOML pipeline configuration file
     #[arg(long)]
     pub config: PathBuf,
+    /// Override the flow source path from the config file
     #[arg(long)]
     pub flows: Option<PathBuf>,
 }
@@ -187,30 +186,22 @@ pub struct PipelineHistogramsArgs {
     pub output: PathBuf,
 }
 
-#[derive(Debug, Args)]
-pub struct PipelineMlArgs {
-    #[command(flatten)]
-    pub common: CommonPipelineArgs,
-    /// Output path for training data
-    #[arg(long)]
-    pub train_path: PathBuf,
-    /// Output path for testing data
-    #[arg(long)]
-    pub test_path: PathBuf,
-    #[arg(long)]
-    pub histograms: Option<PathBuf>,
-}
 
 #[derive(Debug, Args)]
 pub struct GenerateArgs {
+    /// Path to a serialized TrafficProfile (histogram model)
     #[arg(long)]
     pub traffic_profile: PathBuf,
+    /// Path to a model assumptions JSON file (provides the quantizer)
     #[arg(long)]
     pub model: PathBuf,
+    /// Number of synthetic flows to generate
     #[arg(long)]
     pub num_flows: usize,
+    /// Number of packets per generated flow
     #[arg(long)]
     pub flow_length: usize,
+    /// Output CSV path; writes to stdout if omitted
     #[arg(long)]
     pub output: Option<PathBuf>,
     /// Emit quantized bin ids instead of raw feature values
@@ -252,62 +243,8 @@ pub struct DumpCsvArgs {
     /// Prepend the RTT (in seconds) as the first column of each row
     #[arg(long)]
     pub include_rtt: bool,
+    /// Output CSV path
     #[arg(long)]
-    pub output: PathBuf,
-}
-
-#[derive(Debug, serde::Deserialize, Clone)]
-#[serde(try_from = "String")]
-pub enum ObfuscatorSpec {
-    Random { tls_mode: TLSMode },
-    FromFile(std::path::PathBuf),
-}
-
-impl TryFrom<String> for ObfuscatorSpec {
-    type Error = String;
-
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        if let Some(rest) = s.strip_prefix("random:") {
-            let tls_mode = TLSMode::try_from(rest.to_string())?;
-            Ok(Self::Random { tls_mode })
-        } else if let Some(path) = s.strip_prefix("file:") {
-            if path.is_empty() {
-                return Err("file:<path> requires a non-empty path".into());
-            }
-            Ok(Self::FromFile(PathBuf::from(path)))
-        } else {
-            Err("expected one of: random:<outer|inner|tls-in-tls>, file:<path>".into())
-        }
-    }
-}
-
-impl TryFrom<String> for TLSMode {
-    type Error = String;
-
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        match s.as_str() {
-            "outer" => Ok(TLSMode::Outer),
-            "inner" => Ok(TLSMode::Inner),
-            "tls-in-tls" => Ok(TLSMode::TLSInTLS),
-            _ => Err("expected one of: outer, inner, tls-in-tls".to_string()),
-        }
-    }
-}
-
-#[derive(Debug, Parser)]
-pub struct ObfuscationCli {
-    #[command(subcommand)]
-    pub command: ObfuscationCommands,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum ObfuscationCommands {
-    RandProto(RandProtoArgs),
-}
-
-#[derive(Debug, Args)]
-pub struct RandProtoArgs {
-    #[arg(short, long)]
     pub output: PathBuf,
 }
 
@@ -326,34 +263,45 @@ pub enum HistogramsCommands {
 
 #[derive(Debug, Args)]
 pub struct HistogramsDisplayArgs {
+    /// Path to a serialized TrafficProfile (histograms) file
     #[arg(short, long)]
     pub input: String,
+    /// Packet index whose histogram to display
     #[arg(long)]
     pub index: usize,
+    /// Hide bins with fewer than this many observations
     #[arg(long)]
     pub min_count: Option<usize>,
+    /// Hide bins with probability below this threshold
     #[arg(long)]
     pub min_probability: Option<f64>,
+    /// Show only the top-K most probable bins
     #[arg(long)]
     pub top_k: Option<usize>,
+    /// Model assumptions JSON; when provided, bin ids are decoded to human-readable values
     #[arg(long)]
     pub model: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
 pub struct HistogramsMergeArgs {
+    /// Directory containing TrafficProfile files to merge
     #[arg(short, long)]
     pub input: PathBuf,
+    /// Output path for the merged TrafficProfile file
     #[arg(short, long)]
     pub output: PathBuf,
 }
 
 #[derive(Debug, Args)]
 pub struct HistogramsDivergenceArgs {
+    /// Path to the reference TrafficProfile (left-hand side of KL divergence)
     #[arg(long)]
     pub left: PathBuf,
+    /// Path to the comparison TrafficProfile (right-hand side of KL divergence)
     #[arg(long)]
     pub right: PathBuf,
+    /// Output path for the per-packet KL divergence file
     #[arg(long)]
     pub output: PathBuf,
 }
@@ -373,20 +321,24 @@ pub enum DivergenceCommands {
 
 #[derive(Debug, Args)]
 pub struct DivergenceCumulativeArgs {
+    /// Path to a KL divergence file produced by `histograms divergence`
     #[arg(long)]
     pub input: PathBuf,
 }
 
 #[derive(Debug, Args)]
 pub struct DivergenceDeltaArgs {
+    /// Path to a KL divergence file produced by `histograms divergence`
     #[arg(long)]
     pub input: PathBuf,
 }
 
 #[derive(Debug, Args)]
 pub struct DivergenceTermsArgs {
+    /// Path to a KL divergence file produced by `histograms divergence`
     #[arg(long)]
     pub input: PathBuf,
+    /// Packet index to inspect for maximum-divergence terms
     #[arg(long)]
     pub index: usize,
 }
