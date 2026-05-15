@@ -1,90 +1,89 @@
 # Source Overview
 
-This document describes the modules that make up the `obfs` binary.
+`obfs` is a command-line tool for analysing and modelling network traffic. It ingests raw Zeek logs, extracts per-packet features, builds statistical traffic models, and can generate synthetic flows that mimic real traffic patterns.
+
+## How it fits together
+
+```
+Zeek logs → zeek2flows → binary flows file
+                               ↓
+                          stats compute → TrafficStats
+                               ↓
+                          stats bin → ModelAssumptions (quantizer)
+                               ↓
+                    pipeline histograms → TrafficProfile (the model)
+                               ↓
+                    generate / dump-csv → synthetic or exported flows
+```
 
 ## Modules
 
 ### `main.rs`
-Entry point and orchestration. Parses the CLI, dispatches subcommands, and contains shared utilities used across pipelines:
-- `ModelAssumptions` — serializable struct pairing a Markov order with a `FlowQuantizer`.
-- `CsvEmitter` — low-allocation CSV row builder used by the dump-csv and generate commands.
-- `FeatureEncoding` — enum selecting raw vs. quantized feature output.
-- `write_json` — helper to serialise any `serde::Serialize` value to a pretty-printed JSON file.
-- `read_and_filter_flows` / `materialize_sources` — load and optionally clone flow sets from `FlowSource` descriptors.
-- `prepare_flows` — loads and preprocesses (RTT-normalise, strip-handshake) a flow source for a pipeline run.
-- `build_and_write_histograms` — builds a `TrafficProfile` from a flow set and writes it to disk.
-- `run_histograms_pipeline` — end-to-end histogram pipeline (load → preprocess → histogram → write).
+- Loading and preprocessing flows (RTT normalisation, stripping TLS handshake packets)
+- Building and serialising traffic models (histograms)
+- Emitting feature vectors to CSV
 
 ### `cli.rs`
-All CLI argument structs, pipeline configuration structs, and the flow-filter DSL parser.
+Defines every command-line argument and subcommand.
 
-**Top-level subcommands:**
-| Subcommand | Description |
+**Subcommands:**
+| Subcommand | What it does |
 |---|---|
-| `zeek2flows` | Parse Zeek conn + packets logs into a binary flows file |
-| `stats` | Compute, merge, bin, or display `TrafficStats` |
-| `pipeline histograms` | Run the histogram pipeline from a TOML config |
-| `generate` | Sample synthetic flows from a `TrafficProfile` |
-| `dump-csv` | Export a binary flows file to a feature CSV |
-| `histograms` | Display, merge, or compute divergence of histogram files |
-| `divergence` | Analyse a pre-computed KL divergence file |
+| `zeek2flows` | Converts raw Zeek conn + packets logs into a compact binary flows file used by other commands |
+| `stats compute` | Scans a flows file and collects per-packet statistics (min, max, quantile sketches) needed to build a quantizer |
+| `stats merge` | Merges multiple stats files into one (useful when stats are computed in parallel over shards) |
+| `stats bin` | Turns a stats file into a quantizer — the binning scheme that maps continuous feature values to discrete histogram bins |
+| `stats display` | Prints a human-readable summary of a stats file |
+| `pipeline histograms` | Full pipeline: loads flows, fits a Markov-chain traffic model, and writes it to disk |
+| `generate` | Samples synthetic flows from a saved traffic model |
+| `dump-csv` | Exports a binary flows file to a flat CSV of per-packet features |
+| `histograms display` | Prints the histogram at a given packet index from a saved model |
+| `histograms merge` | Merges histogram files from multiple shards |
+| `histograms divergence` | Computes per-packet KL divergence between two traffic profiles |
+| `divergence cumulative` | Shows the cumulative KL divergence as packet index increases |
+| `divergence delta` | Shows the per-packet increment in KL divergence |
+| `divergence terms` | Identifies the individual histogram bins contributing most to divergence at a given packet index |
 
-**Pipeline config structs** (`PipelineConfig`, `FlowConfig`, `Model`) are deserialised from TOML and drive the `pipeline` subcommands.
-
-**Flow-filter DSL** — simple predicate language used with `--flow-filter`:
-- `tlsDataPackets >= N` — keep flows with at least N post-handshake packets
-- `tlsVersion == TLSv12 | TLSv13` — keep flows matching a TLS version
-- Predicates can be combined with `&&`
+**Flow filters** (`--flow-filter`) let you restrict which flows are processed:
+- `tlsDataPackets >= N` — only flows with at least N packets after the TLS handshake
+- `tlsVersion == TLSv12` or `TLSv13` — only flows of a specific TLS version
+- Combine conditions with `&&`
 
 ### `base.rs`
-Core data types and I/O:
-- `Flow` / `Packet` / `FlowBase` — the in-memory flow representation.
-- `ProtocolMetadata` — protocol tag (TLS with handshake boundary, or raw).
-- `FlowFilterPredicate` — runtime predicate evaluated against a flow.
-- `TLSVersion` — enum for TLS 1.2 / 1.3.
-- `stream_flows` / `read_flows` — streaming and batch flow readers.
-- `to_key` — derives a `u64` connection key from a raw connection-id byte slice.
-- `EmitFeatures` / `FlowFile` traits — implemented by types that can emit feature vectors or be serialised to/from disk.
+The core data model. Defines what a flow and a packet look like in memory, and handles reading/writing the binary flows file format.
+
+A **flow** is a single TCP connection: it has connection metadata (timestamps for SYN/SYN-ACK/ACK, connection ID) and an ordered list of packets. Each **packet** has three features: the time since the previous packet (timestamp), whether it was sent by the client or server (direction), and payload size.
+
+Also defines `FlowFilterPredicate`, the runtime representation of the `--flow-filter` argument, and the Zeek log parser (`zeek2flows`).
 
 ### `feature.rs`
-Feature definitions and emission:
-- `FeatureKind` — enum over the observable features (Timestamp, Direction, Size).
-- `FeatureValueType` — continuous vs. discrete distinction used during quantization sampling.
-- `RandomVariableDomain` — `[min, max]` bounds for a feature.
-- `FeatureEmitter` — trait implemented by anything that can receive a stream of feature values (e.g., `CsvEmitter`).
-- `EmitFeatures` — trait for types (e.g., `Flow`) that can push their features into a `FeatureEmitter`.
-- `PacketProjection` — a quantized per-packet feature vector used as a histogram key.
+Defines the three observable packet features (`Timestamp`, `Direction`, `Size`). Also defines:
+- `EmitFeatures`: implemented by `Flow`. allows you to iterate through a flow's packets and extract their feature values one by one.
+- `FeatureEmitter`: the target that receives those feature values (e.g. a CSV writer, a statistics accumulator, etc.)
+
+Think of it as: `Flow` → `EmitFeatures` → pushes values to → `FeatureEmitter` (like a CSV writer).
 
 ### `quantization.rs`
-Quantizer construction and feature binning:
-- `Quantization` — per-feature binning strategy (Uniform, LogUniform, TDigest, or Mask).
-- `PacketQuantizer` — per-packet quantizer combining timestamp, direction, and size quantizers.
-- `FlowQuantizer` — either a single global `PacketQuantizer` or one per packet index.
-- `bin` — constructs a `FlowQuantizer` from a `TrafficStats` using t-digest quantile estimation.
+Handles discretisation: turning continuous feature values (e.g. a packet size of 512 bytes) into discrete bins (e.g. bin 6) so they can be used as histogram keys.
+
+- A **`FeatureQuantizer`** bins one feature (e.g. size) using one of several strategies: uniform buckets, log-uniform buckets, t-digest-derived quantile buckets, or masked out entirely.
+- A **`PacketQuantizer`** combines a quantizer for each feature into a single per-packet discretiser.
+- A **`FlowQuantizer`** is either one global `PacketQuantizer` applied to every packet, or a separate one per packet index (useful when feature distributions shift significantly across packet position).
+- **`PacketProjection`** is the result of quantizing a packet — a tuple of bin indices, one per active feature, used as the key in a histogram.
 
 ### `stats.rs`
-Online traffic statistics used to fit the quantizer:
-- `TrafficStats` — per-packet-index accumulators (t-digests, min/max) for all features.
-- `TrafficStats::from_flows` — computes stats from a slice of flows in parallel.
-- `StatsView` — formatted display of stats, optionally filtered to one feature or packet index.
+Before you can build a quantizer, you need to know the distribution of each feature across your dataset. `TrafficStats` accumulates this information by scanning flows. For each packet index it maintains a t-digest (for quantile estimation) and min/max bounds for each feature. `TrafficStats::from_flows` does this in parallel. Once computed, stats are saved to disk and fed into `stats bin` to produce the quantizer.
 
 ### `histograms.rs`
-Markov-chain traffic model:
-- `Histogram<K>` — a map from key `K` to count, with probability and entropy helpers.
-- `TrafficProfile` — a per-packet-index sequence of `Histogram<PacketProjection>` representing the traffic model.
-- `as_histogram` — accumulates quantized flow packets into a `TrafficProfile`.
-- `TrafficProfile::kl_divergence` — computes per-packet KL divergence between two profiles.
-- `WeightedSampler` — discrete distribution sampler built from a histogram, used by `generate`.
+The traffic model itself. After flows are quantized, each flow becomes a sequence of `PacketProjection` tuples. A **`TrafficProfile`** is a Markov chain over this sequence: for each packet position it stores a histogram counting how often each `PacketProjection` (or short sequence of projections, for higher-order Markov models) was observed. This lets the model capture dependencies between consecutive packets.
+
+`TrafficProfile::kl_divergence` measures how different two profiles are, packet by packet, using KL divergence — useful for evaluating whether two traffic sources are statistically distinguishable.
 
 ### `generator.rs`
-Synthetic flow generation:
-- `generate_flows` — samples `num_flows` flows of `flow_length` packets each by ancestral sampling through the Markov chain defined by a `TrafficProfile`.
-- `PacketSource` — trait for streaming packet producers (future use).
+Given a saved `TrafficProfile`, generates synthetic flows by sampling. For each packet position, it samples the next `PacketProjection` from the conditional distribution given recent history (if markov order > 0), then dequantizes it back to continuous feature values. The result is a `Flow` that statistically resembles the training data.
 
 ### `divergence.rs`
-Post-hoc analysis of KL divergence results:
-- `KLDivergence` — per-packet divergence values with helpers for cumulative sum, per-index delta, and worst-case term identification.
+Post-processing for KL divergence results produced by `histograms divergence`. `KLDivergence` wraps the per-packet divergence array and exposes views useful for analysis: cumulative sum, per-packet increment, and the individual histogram terms that contribute most at a given index.
 
 ### `merge.rs`
-Directory-level merge utility:
-- `merge_from_directory<T>` — reads all files in a directory as type `T` (which must implement `Merge`) and folds them into a single value.
+A small utility for combining results computed in parallel over data shards. Any type that implements `Merge` (e.g. `TrafficStats`, `TrafficProfile`) can be reduced across a directory of files into a single merged result.
