@@ -1,14 +1,10 @@
 use std::error::Error;
-use std::hash::BuildHasher;
 use std::path::Path;
 use std::time::SystemTime;
 
 use clap::Parser;
 use enumflags2::BitFlags;
-use foldhash::fast::RandomState;
 use hashbrown::HashMap;
-use itertools::interleave;
-use rand::Rng;
 use rand::SeedableRng;
 use rayon::prelude::*;
 
@@ -19,7 +15,6 @@ use crate::feature::*;
 use crate::generator::*;
 use crate::histograms::*;
 use crate::merge::*;
-use crate::obfuscation::*;
 use crate::quantization::*;
 use crate::stats::*;
 
@@ -30,7 +25,6 @@ pub mod feature;
 pub mod generator;
 pub mod histograms;
 pub mod merge;
-pub mod obfuscation;
 pub mod quantization;
 pub mod stats;
 
@@ -50,43 +44,6 @@ where
     let json = serde_json::to_string_pretty(&object)?;
     std::fs::write(path, json)?;
     Ok(())
-}
-
-pub struct ShuffleBuffer<I: Iterator> {
-    source: I,
-    buffer: Vec<I::Item>,
-}
-
-impl<I: Iterator> ShuffleBuffer<I> {
-    pub fn new(mut source: I, size: usize) -> Self {
-        let mut buffer = Vec::with_capacity(size);
-        source
-            .by_ref()
-            .take(size)
-            .for_each(|item| buffer.push(item));
-        Self { source, buffer }
-    }
-}
-
-impl<I: Iterator> Iterator for ShuffleBuffer<I> {
-    type Item = I::Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.buffer.is_empty() {
-            return None;
-        }
-
-        let mut rng = rand::rng();
-        let idx = rng.random_range(0..self.buffer.len());
-
-        if let Some(next_item) = self.source.next() {
-            Some(std::mem::replace(&mut self.buffer[idx], next_item))
-        } else {
-            // Source is empty, so we just shrink the buffer.
-            // swap_remove is O(1).
-            Some(self.buffer.swap_remove(idx))
-        }
-    }
 }
 
 struct CsvEmitter {
@@ -176,83 +133,6 @@ fn emit_flow_features(
         FeatureEncoding::Raw => flow.emit_features(num_packets, quantizer, emitter),
         FeatureEncoding::Quantized => flow.emit_quantized_features(num_packets, quantizer, emitter),
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Label {
-    Tls,
-    Obfuscated,
-}
-
-fn assign_to_split(flow_id: &[u8], hasher: &RandomState, train_proportion: u8) -> (Label, bool) {
-    let hash = hasher.hash_one(to_key(flow_id));
-
-    let kept_label = if (hash & 1) == 0 {
-        Label::Tls
-    } else {
-        Label::Obfuscated
-    };
-    let is_train = ((hash >> 1) % 100) < train_proportion as u64;
-
-    (kept_label, is_train)
-}
-
-fn write_flows_as_feature_vectors<'a, I>(
-    flows: I,
-    num_packets: usize,
-    quantizer: &FlowQuantizer,
-    train_path: &Path,
-    test_path: &Path,
-    train_proportion: u8,
-    encoding: FeatureEncoding,
-) -> Result<(), Box<dyn Error>>
-where
-    I: IntoIterator<Item = (&'a Flow, Label)>,
-{
-    let mut train_set_writer = csv::WriterBuilder::new()
-        .has_headers(false)
-        .from_path(train_path)?;
-    let mut test_set_writer = csv::WriterBuilder::new()
-        .has_headers(false)
-        .from_path(test_path)?;
-
-    let mut emitter = CsvEmitter::new();
-    let record_width = 1 + feature_width_for_packets(quantizer, num_packets, encoding);
-
-    let hasher = RandomState::default();
-
-    for (flow, label) in flows {
-        let (kept_label, is_train) = assign_to_split(flow.id(), &hasher, train_proportion);
-
-        //println!("{:#?} {:#?} {:#?} {:#?}", flow.id(), label, kept_label, is_train);
-        if label != kept_label {
-            continue;
-        }
-
-        let writer = if is_train {
-            &mut train_set_writer
-        } else {
-            &mut test_set_writer
-        };
-
-        //emitter.record.push_field(flow.id());
-
-        match label {
-            Label::Tls => emitter.push_label(0),
-            Label::Obfuscated => emitter.push_label(1),
-        }
-
-        emit_flow_features(flow, num_packets, quantizer, &mut emitter, encoding);
-        while emitter.record.len() < record_width {
-            emitter.push_feature(-1.0);
-        }
-
-        writer.write_byte_record(&emitter.record)?;
-
-        emitter.clear();
-    }
-
-    Ok(())
 }
 
 fn write_flows_to_csv<'a, I>(
@@ -434,49 +314,10 @@ fn preprocess(flows: &mut [Flow], strip: bool) -> () {
     });
 }
 
-fn prepare_flows(
-    config: &PipelineConfig,
-) -> Result<(Vec<Flow>, Option<Vec<Flow>>), Box<dyn std::error::Error>> {
-    let source_b = config
-        .ml
-        .as_ref()
-        .map(|ml_config| ml_config.source_b.clone());
-    let (mut flows_a, mut flows_b) = materialize_sources(&config.flow.source_a, source_b.as_ref())?;
-
-    let obfuscator = config
-        .flow
-        .obfuscator
-        .as_ref()
-        .map(|cfg| match &cfg {
-            ObfuscatorSpec::Random { tls_mode } => {
-                let obfuscator = Obfuscator::random(tls_mode.clone());
-                println!("{:#?}", obfuscator);
-                Ok::<Obfuscator, Box<dyn std::error::Error>>(obfuscator)
-            }
-            ObfuscatorSpec::FromFile(path) => {
-                let bytes = std::fs::read(path)?;
-                Ok::<Obfuscator, Box<dyn std::error::Error>>(serde_json::from_slice(&bytes)?)
-            }
-        })
-        .transpose()?;
-
-    if let Some(obfuscator) = obfuscator {
-        match flows_b.as_mut() {
-            Some(b) => {
-                *b = obfuscator.obfuscate_flows(b);
-            }
-            None => {
-                flows_a = obfuscator.obfuscate_flows(&flows_a);
-            }
-        }
-    }
-
-    preprocess(&mut flows_a, config.flow.strip_tls_handshake);
-    if let Some(b) = flows_b.as_mut() {
-        preprocess(b, config.flow.strip_tls_handshake);
-    }
-
-    Ok((flows_a, flows_b))
+fn prepare_flows(config: &PipelineConfig) -> Result<Vec<Flow>, Box<dyn std::error::Error>> {
+    let (mut flows, _) = materialize_sources(&config.flow.source_a, None)?;
+    preprocess(&mut flows, config.flow.strip_tls_handshake);
+    Ok(flows)
 }
 
 fn build_model(
@@ -496,46 +337,16 @@ fn build_model(
         )
 }
 
-fn shuffle_and_write_feature_vectors(
-    flows_a: &[Flow],
-    flows_b: &[Flow],
-    model: &ModelAssumptions,
-    config: &MLConfig,
-    train_path: &Path,
-    test_path: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let labeled_tls = flows_a.iter().map(|f| (f, Label::Tls));
-    let labeled_obfs = flows_b.iter().map(|f| (f, Label::Obfuscated));
-
-    let shuffler = ShuffleBuffer::new(interleave(labeled_tls, labeled_obfs), 100000);
-
-    write_flows_as_feature_vectors(
-        shuffler,
-        config.features_packet_horizon,
-        &model.quantizer,
-        &train_path,
-        &test_path,
-        config.train_proportion,
-        if config.raw_features {
-            FeatureEncoding::Raw
-        } else {
-            FeatureEncoding::Quantized
-        },
-    )
-}
-
 fn build_and_write_histograms(
-    flows_a: &[Flow],
-    flows_b: Option<&[Flow]>,
+    flows: &[Flow],
     config: &PipelineConfig,
     output: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let model_assumptions = serde_json::from_slice::<ModelAssumptions>(&std::fs::read(
         &config.model.model_assumptions,
     )?)?;
-    let target_flows = flows_b.unwrap_or(flows_a);
     let histograms = build_model(
-        target_flows,
+        flows,
         &model_assumptions.quantizer,
         model_assumptions.markov_order,
         config.model.pseudocount,
@@ -548,42 +359,10 @@ pub fn run_histograms_pipeline(
     args: PipelineHistogramsArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let now = SystemTime::now();
-    let (flows_a, flows_b) = prepare_flows(&config)?;
+    let flows = prepare_flows(&config)?;
     println!("Preprocessing finished at {}s", now.elapsed()?.as_secs());
-    build_and_write_histograms(&flows_a, flows_b.as_deref(), &config, &args.output)?;
+    build_and_write_histograms(&flows, &config, &args.output)?;
     println!("Done at {}s", now.elapsed()?.as_secs());
-    Ok(())
-}
-
-pub fn run_ml_pipeline(
-    config: PipelineConfig,
-    args: PipelineMlArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let now = SystemTime::now();
-
-    let model_assumptions = serde_json::from_slice::<ModelAssumptions>(&std::fs::read(
-        &config.model.model_assumptions,
-    )?)?;
-    let ml_config = config.ml.as_ref().expect("ml config required");
-
-    let (flows_a, flows_b) = prepare_flows(&config)?;
-    println!("Preprocessing finished at {}s", now.elapsed()?.as_secs());
-    shuffle_and_write_feature_vectors(
-        &flows_a,
-        flows_b.as_ref().unwrap(),
-        &model_assumptions,
-        &ml_config,
-        &args.train_path,
-        &args.test_path,
-    )?;
-    println!("Writing features finished at {}s", now.elapsed()?.as_secs());
-
-    if let Some(ref histograms_path) = args.histograms {
-        build_and_write_histograms(&flows_a, flows_b.as_deref(), &config, histograms_path)?;
-        println!("Histograms finished at {}s", now.elapsed()?.as_secs());
-    }
-    println!("Done at {}s", now.elapsed()?.as_secs());
-
     Ok(())
 }
 
@@ -637,7 +416,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let traffic_stats = TrafficStats::from_file(&args.input)?;
 
                 let mut feature_mask = BitFlags::<FeatureKind>::all();
-                feature_mask.remove(FeatureKind::Entropy);
                 args.mask
                     .iter()
                     .flatten()
@@ -674,9 +452,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         Commands::Pipeline(pipeline_cli) => match pipeline_cli.command {
             PipelineCommand::Histograms(args) => {
                 run_histograms_pipeline(load_pipeline_config(&args.common)?, args)?
-            }
-            PipelineCommand::Ml(args) => {
-                run_ml_pipeline(load_pipeline_config(&args.common)?, args)?
             }
         },
         Commands::Generate(args) => {
@@ -733,12 +508,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         Commands::DumpCsv(args) => {
             run_dump_csv(&args)?;
         }
-        Commands::Obfuscation(obfuscation_cli) => match obfuscation_cli.command {
-            ObfuscationCommands::RandProto(args) => {
-                let obfuscator = Obfuscator::random(TLSMode::Inner);
-                write_json(obfuscator, &args.output)?;
-            }
-        },
         Commands::Histograms(histograms_cli) => match histograms_cli.command {
             HistogramsCommands::Display(args) => {
                 let histograms =

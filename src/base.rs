@@ -19,7 +19,6 @@ pub struct Packet {
     pub timestamp: f64,
     pub direction: f64,
     pub size: f64,
-    pub entropy: f64,
 }
 
 impl Packet {
@@ -28,7 +27,6 @@ impl Packet {
             FeatureKind::Timestamp => self.timestamp,
             FeatureKind::Direction => self.direction,
             FeatureKind::Size => self.size,
-            FeatureKind::Entropy => self.entropy,
         }
     }
 }
@@ -298,7 +296,6 @@ pub fn read_flows(
                 timestamp: str::from_utf8_unchecked(raw_record.get(2).unwrap()).parse::<f64>()?,
                 direction: str::from_utf8_unchecked(raw_record.get(3).unwrap()).parse::<f64>()?,
                 size: str::from_utf8_unchecked(raw_record.get(4).unwrap()).parse::<f64>()?,
-                entropy: str::from_utf8_unchecked(raw_record.get(5).unwrap()).parse::<f64>()?,
             }
         };
 
