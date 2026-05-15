@@ -100,7 +100,7 @@ obfs stats bin --input <path> --output <path> [options]
 
 The quantizer JSON produced by `stats bin` looks like this (one entry per packet position):
 
-```json
+```jsonc
 {
   "markov_order": 1,
   "quantizer": {
@@ -222,7 +222,7 @@ obfs dump-csv --flows <path>... --model-assumptions <path> -N <n> --output <path
 | `--include-rtt` | | false | Prepend the flow's round-trip time (seconds) as the first column |
 
 ### `generate`
-Samples synthetic flows from a saved TrafficProfile by ancestral sampling through the Markov chain. Outputs a CSV of per-packet features.
+Samples synthetic flows from a saved TrafficProfile by sampling through the Markov chain. Outputs a CSV of per-packet features.
 
 ```
 obfs generate --traffic-profile <path> --model <path> --num-flows <N> --flow-length <N> [options]
