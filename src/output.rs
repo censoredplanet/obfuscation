@@ -2,7 +2,7 @@ use std::error::Error;
 use std::path::Path;
 
 use crate::base::Flow;
-use crate::feature::FeatureEmitter;
+use crate::feature::{EmitFeatures, FeatureEmitter};
 use crate::quantization::FlowQuantizer;
 use crate::quantization::Quantization;
 

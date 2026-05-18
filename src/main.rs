@@ -6,7 +6,6 @@ use clap::Parser;
 use enumflags2::BitFlags;
 use hashbrown::HashMap;
 use rand::SeedableRng;
-use rayon::prelude::*;
 
 use crate::base::*;
 use crate::cli::*;

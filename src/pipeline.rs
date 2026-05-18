@@ -6,8 +6,9 @@ use rayon::prelude::*;
 
 use crate::base::Flow;
 use crate::cli::{CommonPipelineArgs, PipelineHistogramsArgs};
-use crate::histograms::TrafficProfile;
+use crate::merge::{Merge, PostcardIO};
 use crate::quantization::{FlowQuantizer, as_histogram};
+use crate::divergence::TrafficProfile;
 use crate::ModelAssumptions;
 
 pub fn read_and_filter_flows(source: &crate::cli::FlowSource) -> Result<Vec<Flow>, Box<dyn Error>> {
