@@ -3,7 +3,8 @@ use std::path::Path;
 
 use crate::base::Flow;
 use crate::feature::{EmitFeatures, FeatureEmitter};
-use crate::quantization::FlowQuantizer;
+use crate::feature::FeatureKind;
+use crate::quantization::{BoundedFeature, FeatureQuantizer, FlowQuantizer, PacketQuantizer};
 use crate::quantization::Quantization;
 
 pub fn write_json<'a, T>(object: T, path: &Path) -> Result<(), Box<dyn Error>>
@@ -140,10 +141,35 @@ where
     Ok(())
 }
 
+fn default_unmasked_quantizer() -> FlowQuantizer {
+    FlowQuantizer::Global(PacketQuantizer {
+        timestamp: FeatureQuantizer {
+            feature: BoundedFeature::new(FeatureKind::Timestamp),
+            quantization: Quantization::Uniform { inv_width: 1.0 },
+        },
+        direction: FeatureQuantizer {
+            feature: BoundedFeature::new(FeatureKind::Direction),
+            quantization: Quantization::Identity,
+        },
+        size: FeatureQuantizer {
+            feature: BoundedFeature::new(FeatureKind::Size),
+            quantization: Quantization::Identity,
+        },
+    })
+}
+
 pub fn run_dump_csv(args: &crate::cli::DumpCsvArgs) -> Result<(), Box<dyn Error>> {
-    let model_assumptions = serde_json::from_slice::<crate::ModelAssumptions>(
-        &std::fs::read(&args.model_assumptions)?,
-    )?;
+    if args.quantized && args.model_assumptions.is_none() {
+        return Err("--model-assumptions is required when using --quantized".into());
+    }
+
+    let base_quantizer: FlowQuantizer = match &args.model_assumptions {
+        Some(path) => {
+            let ma = serde_json::from_slice::<crate::ModelAssumptions>(&std::fs::read(path)?)?;
+            ma.quantizer
+        }
+        None => default_unmasked_quantizer(),
+    };
     let min_packets = args.min_packets.unwrap_or(args.max_packets);
     let mut writer = csv::WriterBuilder::new()
         .has_headers(false)
@@ -163,7 +189,7 @@ pub fn run_dump_csv(args: &crate::cli::DumpCsvArgs) -> Result<(), Box<dyn Error>
     };
 
     let quantizer: FlowQuantizer = if args.skip_timing {
-        match model_assumptions.quantizer.clone() {
+        match base_quantizer {
             FlowQuantizer::Global(mut pq) => {
                 pq.timestamp.quantization = Quantization::Mask;
                 FlowQuantizer::Global(pq)
@@ -178,7 +204,7 @@ pub fn run_dump_csv(args: &crate::cli::DumpCsvArgs) -> Result<(), Box<dyn Error>
             ),
         }
     } else {
-        model_assumptions.quantizer.clone()
+        base_quantizer
     };
 
     let feature_width = feature_width_for_packets(&quantizer, max_packets, encoding);

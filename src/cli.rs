@@ -217,9 +217,10 @@ pub struct DumpCsvArgs {
     /// One or more binary flows files (output of zeek2flows); accepts multiple paths
     #[arg(long, num_args = 1..)]
     pub flows: Vec<PathBuf>,
-    /// Model assumptions JSON (provides the quantizer / feature mask)
+    /// Model assumptions JSON (provides the quantizer / feature mask).
+    /// Optional when not using --quantized; omitting emits all features unmasked.
     #[arg(long)]
-    pub model_assumptions: PathBuf,
+    pub model_assumptions: Option<PathBuf>,
     /// Max packets per flow (N)
     #[arg(long, short = 'N')]
     pub max_packets: usize,
