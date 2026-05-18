@@ -256,13 +256,13 @@ Combine predicates with `&&`:
 Exports a binary flows file to a flat CSV where each row is a flow and columns are per-packet features. Useful for loading traffic data into Python/pandas for external analysis.
 
 ```
-obfs dump-csv --flows <path>... --model-assumptions <path> -N <n> --output <path> [options]
+obfs dump-csv --flows <path>... -N <n> --output <path> [options]
 ```
 
 | Flag | Short | Default | Description |
 |---|---|---|---|
 | `--flows` | | | One or more binary flows files |
-| `--model-assumptions` | | | Path to the ModelAssumptions JSON (quantizer) |
+| `--model-assumptions` | | *(none)* | Path to the ModelAssumptions JSON (quantizer). Optional for raw output; when omitted all features are emitted unmasked. Required when using `--quantized`. |
 | `--max-packets` | `-N` | | Maximum packets per flow to emit (determines number of columns) |
 | `--output` | | | Output CSV path |
 | `--num-flows` | `-M` | unlimited | Stop after writing this many rows |
