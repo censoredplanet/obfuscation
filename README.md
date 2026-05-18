@@ -18,7 +18,7 @@ Zeek logs → zeek2flows → binary flows file
 
 ---
 
-## Stage 1 — Ingest
+## Stage 1: Parse Log Files
 
 ### `zeek2flows`
 Parses raw Zeek conn and packets logs and writes a compact binary flows file used by all other commands.
@@ -35,7 +35,7 @@ obfs zeek2flows --flows <path> --packets <path> --output <path>
 
 ---
 
-## Stage 2 — Compute statistics
+## Stage 2: Compute statistics
 
 ### `stats compute`
 Scans a flows file and collects per-packet feature statistics (min, max, quantile sketches). The output is used by `stats bin` to build a quantizer.
@@ -78,7 +78,7 @@ obfs stats display --input <path> [options]
 
 ---
 
-## Stage 3 — Build the quantizer
+## Stage 3: Build the Quantizer
 
 ### `stats bin`
 Converts a stats file into a quantizer — the binning scheme that maps continuous feature values to discrete bins. The output (`ModelAssumptions` JSON) is required by `pipeline histograms`, `dump-csv`, and `generate`.
@@ -140,7 +140,7 @@ Key fields:
 
 ---
 
-## Stage 4 — Fit the traffic model
+## Stage 4: Building Histograms/Model/Probability Distribution
 
 ### `pipeline histograms`
 Loads flows, quantizes them using the model assumptions, and fits a Markov-chain traffic model (TrafficProfile). The config is a TOML file; `--flows` overrides the path set in the config.
@@ -198,49 +198,7 @@ obfs histograms display --input <path> --index <n> [options]
 
 ---
 
-## Stage 5 — Use the model
-
-### `dump-csv`
-Exports a binary flows file to a flat CSV where each row is a flow and columns are per-packet features. Useful for loading traffic data into Python/pandas for external analysis.
-
-```
-obfs dump-csv --flows <path>... --model-assumptions <path> -N <n> --output <path> [options]
-```
-
-| Flag | Short | Default | Description |
-|---|---|---|---|
-| `--flows` | | | One or more binary flows files |
-| `--model-assumptions` | | | Path to the ModelAssumptions JSON (quantizer) |
-| `--max-packets` | `-N` | | Maximum packets per flow to emit (determines number of columns) |
-| `--output` | | | Output CSV path |
-| `--num-flows` | `-M` | unlimited | Stop after writing this many rows |
-| `--min-packets` | | `--max-packets` | Skip flows shorter than this |
-| `--strip-tls-handshake` | | false | Exclude handshake packets before emitting features |
-| `--flow-filter` | | `tlsDataPackets >= 0` | Only include flows matching this predicate |
-| `--skip-timing` | | false | Omit timestamp columns (emit only size and direction) |
-| `--quantized` | | false | Emit bin indices instead of raw feature values |
-| `--include-rtt` | | false | Prepend the flow's round-trip time (seconds) as the first column |
-
-### `generate`
-Samples synthetic flows from a saved TrafficProfile by sampling through the Markov chain. Outputs a CSV of per-packet features.
-
-```
-obfs generate --traffic-profile <path> --model <path> --num-flows <N> --flow-length <N> [options]
-```
-
-| Flag | Default | Description |
-|---|---|---|
-| `--traffic-profile` | | Path to a TrafficProfile file produced by `pipeline histograms` |
-| `--model` | | Path to the ModelAssumptions JSON (quantizer) |
-| `--num-flows` | | Number of flows to generate |
-| `--flow-length` | | Number of packets per flow |
-| `--output` | stdout | CSV output path |
-| `--quantized` | false | Emit raw bin indices instead of dequantized feature values |
-| `--seed` | | Fix the random seed for reproducible output |
-
----
-
-## Comparing two traffic sources
+## Stage 5: Computing Divergence
 
 ### `histograms divergence`
 Computes the per-packet KL divergence between two TrafficProfiles. The result is written to disk and consumed by the `divergence` subcommands.
@@ -291,3 +249,45 @@ Combine predicates with `&&`:
 ```
 "tlsDataPackets >= 10 && tlsVersion == TLSv13"
 ```
+
+## Stage 6: Generating Real & Synthetic Data (CSV)
+
+### `dump-csv`
+Exports a binary flows file to a flat CSV where each row is a flow and columns are per-packet features. Useful for loading traffic data into Python/pandas for external analysis.
+
+```
+obfs dump-csv --flows <path>... --model-assumptions <path> -N <n> --output <path> [options]
+```
+
+| Flag | Short | Default | Description |
+|---|---|---|---|
+| `--flows` | | | One or more binary flows files |
+| `--model-assumptions` | | | Path to the ModelAssumptions JSON (quantizer) |
+| `--max-packets` | `-N` | | Maximum packets per flow to emit (determines number of columns) |
+| `--output` | | | Output CSV path |
+| `--num-flows` | `-M` | unlimited | Stop after writing this many rows |
+| `--min-packets` | | `--max-packets` | Skip flows shorter than this |
+| `--strip-tls-handshake` | | false | Exclude handshake packets before emitting features |
+| `--flow-filter` | | `tlsDataPackets >= 0` | Only include flows matching this predicate |
+| `--skip-timing` | | false | Omit timestamp columns (emit only size and direction) |
+| `--quantized` | | false | Emit bin indices instead of raw feature values |
+| `--include-rtt` | | false | Prepend the flow's round-trip time (seconds) as the first column |
+
+### `generate`
+Samples synthetic flows from a saved TrafficProfile by sampling through the Markov chain. Outputs a CSV of per-packet features.
+
+```
+obfs generate --traffic-profile <path> --model <path> --num-flows <N> --flow-length <N> [options]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--traffic-profile` | | Path to a TrafficProfile file produced by `pipeline histograms` |
+| `--model` | | Path to the ModelAssumptions JSON (quantizer) |
+| `--num-flows` | | Number of flows to generate |
+| `--flow-length` | | Number of packets per flow |
+| `--output` | stdout | CSV output path |
+| `--quantized` | false | Emit raw bin indices instead of dequantized feature values |
+| `--seed` | | Fix the random seed for reproducible output |
+
+---
