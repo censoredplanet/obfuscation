@@ -227,7 +227,7 @@ pub struct DumpCsvArgs {
     /// Maximum number of flow rows to write
     #[arg(long, short = 'M', default_value_t = usize::MAX)]
     pub num_flows: usize,
-    /// Minimum packets a flow must have to be included (default = max_packets)
+    /// Minimum packets a flow must have to be included (default = 0, i.e. all flows)
     #[arg(long)]
     pub min_packets: Option<usize>,
     #[arg(long)]

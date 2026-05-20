@@ -170,7 +170,7 @@ pub fn run_dump_csv(args: &crate::cli::DumpCsvArgs) -> Result<(), Box<dyn Error>
         }
         None => default_unmasked_quantizer(),
     };
-    let min_packets = args.min_packets.unwrap_or(args.max_packets);
+    let min_packets = args.min_packets.unwrap_or(0);
     let mut writer = csv::WriterBuilder::new()
         .has_headers(false)
         .from_path(&args.output)?;
