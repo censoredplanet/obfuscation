@@ -35,7 +35,7 @@ where
 
         Ok(Self {
             len: vec.len(),
-            sequence: vec.into(),
+            sequence: Arc::from(vec),
         })
     }
 }
