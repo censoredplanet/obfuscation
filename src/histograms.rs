@@ -2,15 +2,43 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use hashbrown::HashMap;
 
 use crate::merge::{Merge, PostcardIO};
 use crate::quantization::{PacketProjection, PacketProjectionDisplay, PacketQuantizer};
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct Sequence<T> {
     pub sequence: Arc<[T]>,
     len: usize,
+}
+
+impl<T: Serialize + Clone> Serialize for Sequence<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let vec: Vec<T> = self.sequence[..self.len].to_vec();
+        vec.serialize(serializer)
+    }
+}
+
+impl<'de, T> Deserialize<'de> for Sequence<T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let vec = Vec::<T>::deserialize(deserializer)?;
+
+        Ok(Self {
+            len: vec.len(),
+            sequence: Arc::from(vec),
+        })
+    }
 }
 
 impl<T: Clone> Sequence<T> {
@@ -22,24 +50,18 @@ impl<T: Clone> Sequence<T> {
     }
 
     pub fn last(&self) -> T {
-        self.sequence[self.sequence.len() - 1].clone()
+        self.sequence[self.len - 1].clone()
     }
 }
 
 impl<T: Hash> Hash for Sequence<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.len.hash(state);
-        for i in 0..self.len {
-            self.sequence[i].hash(state);
-        }
+        self.sequence[..self.len].hash(state);
     }
 }
 
 impl<T: PartialEq> PartialEq for Sequence<T> {
     fn eq(&self, other: &Self) -> bool {
-        if self.len != other.len {
-            return false;
-        }
         self.sequence[..self.len] == other.sequence[..other.len]
     }
 }

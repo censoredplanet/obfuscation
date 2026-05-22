@@ -97,6 +97,9 @@ pub struct StatsBinArgs {
     /// Maximum allowed probability mass per quantization bin
     #[arg(long, default_value_t = 0.05)]
     pub delta: f64,
+    /// Maximum number of packet positions to include in the quantizer/model
+    #[arg(long)]
+    pub max_packets: Option<usize>,
     /// Features to mask out (exclude) from the quantizer
     #[arg(long)]
     pub mask: Option<Vec<FeatureKind>>,
@@ -244,6 +247,12 @@ pub struct DumpCsvArgs {
     /// Prepend the RTT (in seconds) as the first column of each row
     #[arg(long)]
     pub include_rtt: bool,
+    /// Fraction of matching flows to sample from each file (0.0–1.0). Default 1.0 = take all.
+    #[arg(long, default_value_t = 1.0)]
+    pub sample_rate: f64,
+    /// RNG seed for reproducible file shuffling and flow sampling. Omit for random.
+    #[arg(long)]
+    pub seed: Option<u64>,
     /// Output CSV path
     #[arg(long)]
     pub output: PathBuf,

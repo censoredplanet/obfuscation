@@ -78,6 +78,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 merged.write(&args.output)?;
             }
             StatsCommand::Bin(args) => {
+                if args.max_packets == Some(0) {
+                    return Err("--max-packets must be greater than 0".into());
+                }
+
                 let traffic_stats = TrafficStats::from_file(&args.input)?;
 
                 let mut feature_mask = BitFlags::<FeatureKind>::all();
@@ -94,6 +98,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         args.markov_order,
                         args.epsilon,
                         args.delta,
+                        args.max_packets,
                     )),
                 };
 

@@ -1,6 +1,10 @@
 use std::error::Error;
 use std::path::Path;
 
+use rand::SeedableRng;
+use rand::seq::SliceRandom;
+use rand::Rng;
+
 use crate::base::Flow;
 use crate::feature::{EmitFeatures, FeatureEmitter};
 use crate::feature::FeatureKind;
@@ -162,6 +166,9 @@ pub fn run_dump_csv(args: &crate::cli::DumpCsvArgs) -> Result<(), Box<dyn Error>
     if args.quantized && args.model_assumptions.is_none() {
         return Err("--model-assumptions is required when using --quantized".into());
     }
+    if args.sample_rate <= 0.0 || args.sample_rate > 1.0 {
+        return Err("--sample-rate must be in (0.0, 1.0]".into());
+    }
 
     let base_quantizer: FlowQuantizer = match &args.model_assumptions {
         Some(path) => {
@@ -181,6 +188,7 @@ pub fn run_dump_csv(args: &crate::cli::DumpCsvArgs) -> Result<(), Box<dyn Error>
     let num_flows = args.num_flows;
     let flow_filter = &args.flow_filter;
     let include_rtt = args.include_rtt;
+    let sample_rate = args.sample_rate;
 
     let encoding = if args.quantized {
         FeatureEncoding::Quantized
@@ -210,56 +218,88 @@ pub fn run_dump_csv(args: &crate::cli::DumpCsvArgs) -> Result<(), Box<dyn Error>
     let feature_width = feature_width_for_packets(&quantizer, max_packets, encoding);
     let mut io_err: Option<std::io::Error> = None;
 
-    for path in &args.flows {
-        if total >= num_flows {
+    let seed = args.seed.unwrap_or_else(|| rand::random::<u64>());
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    let mut current_rate = sample_rate;
+
+    loop {
+        let mut paths: Vec<&std::path::PathBuf> = args.flows.iter().collect();
+        paths.shuffle(&mut rng);
+
+        for path in &paths {
+            if total >= num_flows {
+                break;
+            }
+
+            crate::base::stream_flows(path, |mut flow| {
+                if !flow_filter.matches(&flow) {
+                    return std::ops::ControlFlow::Continue(());
+                }
+
+                // Bernoulli sampling: skip this flow with probability (1 - current_rate)
+                if current_rate < 1.0 && rng.random::<f64>() >= current_rate {
+                    return std::ops::ControlFlow::Continue(());
+                }
+
+                if strip {
+                    flow.strip_tls_handshake();
+                }
+
+                let rtt = {
+                    let client_to_observer =
+                        (flow.base.ack_ts - flow.base.synack_ts) / 2.0;
+                    (flow.base.synack_ts - flow.base.syn_ts) + (2.0 * client_to_observer)
+                };
+                flow.rtt_normalize();
+
+                if flow.packets.len() < min_packets {
+                    return std::ops::ControlFlow::Continue(());
+                }
+
+                if include_rtt {
+                    emitter.push_numeric(rtt);
+                }
+                emit_flow_features(&flow, max_packets, &quantizer, &mut emitter, encoding);
+                while emitter.record.len() < feature_width + include_rtt as usize {
+                    emitter.push_feature(-1.0);
+                }
+
+                if let Err(e) = writer.write_byte_record(&emitter.record) {
+                    io_err = Some(e.into());
+                    return std::ops::ControlFlow::Break(());
+                }
+                emitter.clear();
+                total += 1;
+
+                if total >= num_flows {
+                    std::ops::ControlFlow::Break(())
+                } else {
+                    std::ops::ControlFlow::Continue(())
+                }
+            })?;
+
+            if let Some(e) = io_err.take() {
+                return Err(e.into());
+            }
+        }
+
+        if total >= num_flows || current_rate >= 1.0 {
             break;
         }
 
-        crate::base::stream_flows(path, |mut flow| {
-            if !flow_filter.matches(&flow) {
-                return std::ops::ControlFlow::Continue(());
-            }
+        // sample_rate was too low; retry with a higher rate over a fresh shuffle
+        let next_rate = (current_rate * 2.0).min(1.0);
+        eprintln!(
+            "warning: collected {}/{} flows at sample_rate={:.4}; retrying at {:.4}",
+            total, num_flows, current_rate, next_rate
+        );
+        current_rate = next_rate;
+    }
 
-            if strip {
-                flow.strip_tls_handshake();
-            }
-
-            let rtt = {
-                let client_to_observer =
-                    (flow.base.ack_ts - flow.base.synack_ts) / 2.0;
-                (flow.base.synack_ts - flow.base.syn_ts) + (2.0 * client_to_observer)
-            };
-            flow.rtt_normalize();
-
-            if flow.packets.len() < min_packets {
-                return std::ops::ControlFlow::Continue(());
-            }
-
-            if include_rtt {
-                emitter.push_numeric(rtt);
-            }
-            emit_flow_features(&flow, max_packets, &quantizer, &mut emitter, encoding);
-            while emitter.record.len() < feature_width + include_rtt as usize {
-                emitter.push_feature(-1.0);
-            }
-
-            if let Err(e) = writer.write_byte_record(&emitter.record) {
-                io_err = Some(e.into());
-                return std::ops::ControlFlow::Break(());
-            }
-            emitter.clear();
-            total += 1;
-
-            if total >= num_flows {
-                std::ops::ControlFlow::Break(())
-            } else {
-                std::ops::ControlFlow::Continue(())
-            }
-        })?;
-
-        if let Some(e) = io_err {
-            return Err(e.into());
-        }
+    if total < num_flows && num_flows != usize::MAX {
+        eprintln!(
+            "warning: binary files only yielded {total} matching flows (target was {num_flows})"
+        );
     }
 
     Ok(())
