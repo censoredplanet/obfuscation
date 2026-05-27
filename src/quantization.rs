@@ -467,8 +467,7 @@ impl FeatureQuantizer {
                 self.feature.effective_max()
             ),
             Quantization::Identity => {
-                let v = bin_idx as f64 + self.feature.effective_min();
-                format!("[{}, {}]", v, v)
+                format!("[{}, {}]", bin_idx, bin_idx)
             }
             Quantization::Uniform { inv_width } => {
                 let bin_width = 1.0 / inv_width;
