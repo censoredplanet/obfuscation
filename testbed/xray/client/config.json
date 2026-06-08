@@ -1,0 +1,181 @@
+{
+  "log": { "loglevel": "debug" },
+  "inbounds": [
+    {
+      "tag": "socks-vmess",
+      "port": 1082,
+      "listen": "0.0.0.0",
+      "protocol": "socks",
+      "settings": { "auth": "noauth", "udp": true }
+    },
+    {
+      "tag": "socks-vless",
+      "port": 1083,
+      "listen": "0.0.0.0",
+      "protocol": "socks",
+      "settings": { "auth": "noauth", "udp": true }
+    },
+    {
+      "tag": "socks-trojan",
+      "listen": "0.0.0.0",
+      "port": 1084,
+      "protocol": "socks",
+      "settings": { "auth": "noauth", "udp": true }
+    },
+    {
+      "tag": "socks-vless-ws",
+      "listen": "0.0.0.0",
+      "port": 1085,
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      }
+    },
+    {
+      "tag": "socks-vless-vision",
+      "port": 1087,
+      "listen": "0.0.0.0",
+      "protocol": "socks",
+      "settings": { "auth": "noauth", "udp": true }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "out-vmess",
+      "protocol": "vmess",
+      "settings": {
+        "vnext": [
+          {
+            "address": "xray-server",
+            "port": 10001,
+            "users": [
+              { "id": "54f47e2c-748f-4b89-88e7-10534f9a0f8a", "security": "auto" }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "naiveproxy.lab",
+          "allowInsecure": true,
+          "allowInsecureCiphers": true
+        }
+      }
+    },
+    {
+      "tag": "out-vless",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "xray-server",
+            "port": 10002,
+            "users": [
+              { "id": "54f47e2c-748f-4b89-88e7-10534f9a0f8a", "encryption": "none" }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "naiveproxy.lab", 
+          "allowInsecure": true,
+          "allowInsecureCiphers": true
+        }
+      }
+    },
+    {
+      "tag": "out-trojan",
+      "protocol": "trojan",
+      "settings": {
+        "servers": [
+          {
+            "address": "xray-server",
+            "port": 10003,
+            "password": "test"
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "naiveproxy.lab",
+          "allowInsecure": true,
+          "allowInsecureCiphers": true
+        }
+      }
+    },
+    {
+      "tag": "out-vless-ws",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "xray-server",
+            "port": 10004,
+            "users": [
+              {
+                "id": "54f47e2c-748f-4b89-88e7-10534f9a0f8a",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "naiveproxy.lab",
+          "allowInsecure": true
+        },
+        "wsSettings": {
+          "path": "/ws-path"
+        }
+      }
+    },
+    {
+      "tag": "out-vless-vision",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "xray-server",
+            "port": 10006,
+            "users": [
+              {
+                "id": "54f47e2c-748f-4b89-88e7-10534f9a0f8a",
+                "encryption": "none",
+                "flow": "xtls-rprx-vision"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "naiveproxy.lab",
+          "allowInsecure": true,
+          "allowInsecureCiphers": true
+        }
+      }
+    }
+  ],
+  "routing": {
+    "rules": [
+      { "type": "field", "inboundTag": ["socks-vmess"], "outboundTag": "out-vmess" },
+      { "type": "field", "inboundTag": ["socks-vless"], "outboundTag": "out-vless" },
+      { "type": "field", "inboundTag": ["socks-trojan"], "outboundTag": "out-trojan" },
+      { "type": "field", "inboundTag": ["socks-vless-ws"], "outboundTag": "out-vless-ws" },
+      { "type": "field", "inboundTag": ["socks-vless-vision"], "outboundTag": "out-vless-vision" }
+    ]
+  }
+}

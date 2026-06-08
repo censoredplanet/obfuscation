@@ -1,0 +1,36 @@
+{
+  "log": { "loglevel": "debug" },
+  "inbounds": [
+    {
+      "tag": "in-vless-grpc",
+      "port": 10005,
+      "listen": "0.0.0.0",
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "54f47e2c-748f-4b89-88e7-10534f9a0f8a",
+            "level": 0
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "grpc",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [
+            {
+              "certificateFile": "/etc/xray/certs/server.crt",
+              "keyFile": "/etc/xray/certs/server.key"
+            }
+          ]
+        },
+        "grpcSettings": {
+          "serviceName": "grpcService"
+        }
+      }
+    }
+  ],
+  "outbounds": [{ "protocol": "freedom" }]
+}

@@ -1,0 +1,22 @@
+services:
+  - name: service-0
+    addr: ":1088"
+    handler:
+      type: socks5
+      chain: chain-0
+    listener:
+      type: tcp
+
+chains:
+  - name: chain-0
+    hops:
+      - name: hop-0
+        nodes:
+          - name: node-0
+            addr: gost-server:8443
+            connector:
+              type: socks5
+            dialer:
+              type: tls
+              tls:
+                secure: false

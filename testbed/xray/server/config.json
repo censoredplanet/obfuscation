@@ -1,0 +1,133 @@
+{
+  "log": { "loglevel": "debug" },
+  "inbounds": [
+    {
+      "tag": "in-vmess",
+      "port": 10001,
+      "listen": "0.0.0.0",
+      "protocol": "vmess",
+      "settings": {
+        "clients": [
+          { "id": "54f47e2c-748f-4b89-88e7-10534f9a0f8a" }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [
+            {
+              "certificateFile": "/etc/xray/certs/server.crt",
+              "keyFile": "/etc/xray/certs/server.key"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "tag": "in-vless",
+      "port": 10002,
+      "listen": "0.0.0.0",
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          { "id": "54f47e2c-748f-4b89-88e7-10534f9a0f8a" }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [
+            {
+              "certificateFile": "/etc/xray/certs/server.crt",
+              "keyFile": "/etc/xray/certs/server.key"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "tag": "in-trojan",
+      "port": 10003,
+      "listen": "0.0.0.0",
+      "protocol": "trojan",
+      "settings": {
+        "clients": [
+          { "password": "test" }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [
+            {
+              "certificateFile": "/etc/xray/certs/server.crt",
+              "keyFile": "/etc/xray/certs/server.key"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "tag": "in-vless-ws",
+      "port": 10004,
+      "listen": "0.0.0.0",
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "54f47e2c-748f-4b89-88e7-10534f9a0f8a",
+            "level": 0
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "ws",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [
+            {
+              "certificateFile": "/etc/xray/certs/server.crt",
+              "keyFile": "/etc/xray/certs/server.key"
+            }
+          ]
+        },
+        "wsSettings": {
+          "path": "/ws-path"
+        }
+      }
+    },
+    {
+      "tag": "in-vless-vision",
+      "port": 10006,
+      "listen": "0.0.0.0",
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "54f47e2c-748f-4b89-88e7-10534f9a0f8a",
+            "flow": "xtls-rprx-vision"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [
+            {
+              "certificateFile": "/etc/xray/certs/server.crt",
+              "keyFile": "/etc/xray/certs/server.key"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outbounds": [{ "protocol": "freedom" }]
+}
