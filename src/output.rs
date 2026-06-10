@@ -162,6 +162,32 @@ fn default_unmasked_quantizer() -> FlowQuantizer {
     })
 }
 
+fn estimate_rtt(flow: &Flow) -> f64 {
+    let client_to_observer = (flow.base.ack_ts - flow.base.synack_ts) / 2.0;
+    (flow.base.synack_ts - flow.base.syn_ts) + (2.0 * client_to_observer)
+}
+
+fn convert_timestamps_to_iats(flow: &mut Flow, scale: f64) {
+    let mut prev_c2s_ts = None;
+    let mut prev_s2c_ts = None;
+
+    for packet in flow.packets.iter_mut() {
+        let prev_ts = if packet.direction > 0.5 {
+            &mut prev_c2s_ts
+        } else {
+            &mut prev_s2c_ts
+        };
+
+        let iat = match *prev_ts {
+            None => 0.0,
+            Some(ts) => packet.timestamp - ts,
+        };
+
+        *prev_ts = Some(packet.timestamp);
+        packet.timestamp = iat / scale;
+    }
+}
+
 pub fn run_dump_csv(args: &crate::cli::DumpCsvArgs) -> Result<(), Box<dyn Error>> {
     if args.quantized && args.model_assumptions.is_none() {
         return Err("--model-assumptions is required when using --quantized".into());
@@ -245,12 +271,12 @@ pub fn run_dump_csv(args: &crate::cli::DumpCsvArgs) -> Result<(), Box<dyn Error>
                     flow.strip_tls_handshake();
                 }
 
-                let rtt = {
-                    let client_to_observer =
-                        (flow.base.ack_ts - flow.base.synack_ts) / 2.0;
-                    (flow.base.synack_ts - flow.base.syn_ts) + (2.0 * client_to_observer)
-                };
-                flow.rtt_normalize();
+                let rtt = estimate_rtt(&flow);
+                if include_rtt {
+                    convert_timestamps_to_iats(&mut flow, 1.0);
+                } else {
+                    flow.rtt_normalize();
+                }
 
                 if flow.packets.len() < min_packets {
                     return std::ops::ControlFlow::Continue(());

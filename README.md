@@ -272,7 +272,7 @@ obfs dump-csv --flows <path>... -N <n> --output <path> [options]
 | `--flow-filter` | | `tlsDataPackets >= 0` | Only include flows matching this predicate |
 | `--skip-timing` | | false | Omit timestamp columns (emit only size and direction) |
 | `--quantized` | | false | Emit bin indices instead of raw feature values |
-| `--include-rtt` | | false | Prepend the flow's round-trip time (seconds) as the first column |
+| `--include-rtt` | | false | Prepend the flow's round-trip time (seconds) as the first column and emit timing columns as raw IAT seconds; without this flag timing columns are RTT-normalized |
 
 ### `generate`
 Samples synthetic flows from a saved TrafficProfile by sampling through the Markov chain. Outputs a CSV of per-packet features.

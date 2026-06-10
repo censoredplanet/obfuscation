@@ -14,13 +14,12 @@ pub struct Sequence<T> {
     len: usize,
 }
 
-impl<T: Serialize + Clone> Serialize for Sequence<T> {
+impl<T: Serialize> Serialize for Sequence<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let vec: Vec<T> = self.sequence[..self.len].to_vec();
-        vec.serialize(serializer)
+        self.sequence[..self.len].serialize(serializer)
     }
 }
 

@@ -244,7 +244,8 @@ pub struct DumpCsvArgs {
     /// Emit quantized bin ids instead of raw feature values
     #[arg(long)]
     pub quantized: bool,
-    /// Prepend the RTT (in seconds) as the first column of each row
+    /// Prepend the RTT (in seconds) as the first column and emit raw IAT seconds.
+    /// Without this flag, timing columns remain RTT-normalized.
     #[arg(long)]
     pub include_rtt: bool,
     /// Fraction of matching flows to sample from each file (0.0–1.0). Default 1.0 = take all.

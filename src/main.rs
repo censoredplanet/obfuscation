@@ -221,8 +221,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             DivergenceCommands::Terms(args) => {
                 let divergence = KLDivergence::from_file(&args.input)?;
-                println!("{:?}", divergence.max_index());
-                divergence.max_packet_at_idx(1);
+                divergence.max_packet_at_idx(args.index);
             }
         },
     }
