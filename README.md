@@ -94,6 +94,7 @@ obfs stats bin --input <path> --output <path> [options]
 | `--markov-order` | `0` | Order of the Markov chain (0 = each packet is independent; higher values capture dependencies between consecutive packets) |
 | `--epsilon` | `0.05` | Accuracy of quantile estimation — lower is more accurate but produces more bins |
 | `--delta` | `0.05` | Maximum probability mass allowed per bin — lower forces finer granularity |
+| `--max-packets` | | Maximum number of packet positions to include in the quantizer/model |
 | `--mask` | | Features to exclude entirely (e.g. `--mask timestamp`) |
 
 #### ModelAssumptions file format
@@ -266,12 +267,12 @@ obfs dump-csv --flows <path>... -N <n> --output <path> [options]
 | `--max-packets` | `-N` | | Maximum packets per flow to emit (determines number of columns) |
 | `--output` | | | Output CSV path |
 | `--num-flows` | `-M` | unlimited | Stop after writing this many rows |
-| `--min-packets` | | `--max-packets` | Skip flows shorter than this |
+| `--min-packets` | | `0` | Skip flows shorter than this; shorter flows are included and padded with `-1` |
 | `--strip-tls-handshake` | | false | Exclude handshake packets before emitting features |
 | `--flow-filter` | | `tlsDataPackets >= 0` | Only include flows matching this predicate |
 | `--skip-timing` | | false | Omit timestamp columns (emit only size and direction) |
 | `--quantized` | | false | Emit bin indices instead of raw feature values |
-| `--include-rtt` | | false | Prepend the flow's round-trip time (seconds) as the first column |
+| `--include-rtt` | | false | Prepend the flow's round-trip time (seconds) as the first column and emit timing columns as raw IAT seconds; without this flag timing columns are RTT-normalized |
 
 ### `generate`
 Samples synthetic flows from a saved TrafficProfile by sampling through the Markov chain. Outputs a CSV of per-packet features.

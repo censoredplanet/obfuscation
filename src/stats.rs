@@ -312,13 +312,17 @@ pub fn bin(
     markov_order: u32,
     epsilon: f64,
     delta: f64,
+    max_packets: Option<usize>,
 ) -> Vec<PacketQuantizer> {
-    let max_len = traffic_stats
+    let observed_max_len = traffic_stats
         .stats
         .values()
         .map(|v| v.len())
         .max()
         .unwrap_or(0);
+    let max_len = max_packets
+        .map(|max_packets| observed_max_len.min(max_packets))
+        .unwrap_or(observed_max_len);
 
     let mut quantizers: Vec<PacketQuantizer> = Vec::with_capacity(max_len);
 
