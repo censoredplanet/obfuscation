@@ -52,9 +52,6 @@ done
 HISTOGRAMS_SCRATCH=$(mktemp -d --tmpdir 2>/dev/null || mktemp -d -t 'tmp') || exit 1
 export HISTOGRAMS_SCRATCH
 
-FEATURES_SCRATCH=$(mktemp -d --tmpdir 2>/dev/null || mktemp -d -t 'tmp') || exit 1
-export FEATURES_SCRATCH
-
 export OUTPUT_DIR=${ROOT}/$(uuidgen) 
 mkdir -p ${OUTPUT_DIR}
 
@@ -74,9 +71,6 @@ done | xargs -n 1 -P 8 bash -c '
         --output "${HISTOGRAMS_SCRATCH}/histograms.$(uuidgen).bin"
 '
 
-cat ${FEATURES_SCRATCH}/train*.csv > ${OUTPUT_DIR}/train.csv &
-cat ${FEATURES_SCRATCH}/test*.csv > ${OUTPUT_DIR}/test.csv & 
-
 obfs histograms merge \
     --input ${HISTOGRAMS_SCRATCH} \
     --output ${OUTPUT_DIR}/hist.bin &
@@ -84,8 +78,7 @@ obfs histograms merge \
 wait
 
 ls ${HISTOGRAMS_SCRATCH}
-ls ${FEATURES_SCRATCH}
 
 echo "Written to ${OUTPUT_DIR}"
 
-rm -rf ${HISTOGRAMS_SCRATCH} ${FEATURES_SCRATCH}
+rm -rf ${HISTOGRAMS_SCRATCH}

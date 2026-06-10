@@ -20,6 +20,7 @@ pub enum Commands {
     #[command(name = "zeek2flows")]
     Zeek2Flows(Zeek2FlowsArgs),
     Stats(StatsCli),
+    /// Run CenKL
     Pipeline(PipelineCli),
     Generate(GenerateArgs),
     #[command(name = "dump-csv")]

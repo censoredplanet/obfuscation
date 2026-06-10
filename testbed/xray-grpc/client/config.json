@@ -1,0 +1,51 @@
+{
+  "log": { "loglevel": "debug" },
+  "inbounds": [
+    {
+      "tag": "socks-vless-grpc",
+      "listen": "0.0.0.0",
+      "port": 1086,
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "out-vless-grpc",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "xray-server-grpc",
+            "port": 10005,
+            "users": [
+              {
+                "id": "54f47e2c-748f-4b89-88e7-10534f9a0f8a",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "grpc",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "naiveproxy.lab",
+          "allowInsecure": true
+        },
+        "grpcSettings": {
+          "serviceName": "grpcService"
+        }
+      }
+    }
+  ],
+  "routing": {
+    "rules": [
+      { "type": "field", "inboundTag": ["socks-vless-grpc"], "outboundTag": "out-vless-grpc" }
+    ]
+  }
+}

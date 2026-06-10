@@ -1,0 +1,191 @@
+services:
+  naiveproxy-server:
+    image: pocat/naiveproxy@sha256:71a1c1efd8692afe1aa9a3af496e44a5fd7aceacff1d4077198aca2b9113db98
+    container_name: naiveproxy-server
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    environment:
+      - PATH=/etc/naiveproxy/Caddyfile
+    volumes:
+      - ./naiveproxy/server/Caddyfile:/etc/naiveproxy/Caddyfile:ro
+      - ./certs/server.crt:/etc/naiveproxy/server.crt:ro
+      - ./certs/server.key:/etc/naiveproxy/server.key:ro
+    ports:
+      - "127.0.0.1:443:443/tcp"
+
+  naiveproxy-client:
+    build:
+      context: ./naiveproxy/client
+      dockerfile: Dockerfile
+    image: naiveproxy:client
+    container_name: naiveproxy-client
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    depends_on:
+      - naiveproxy-server
+    volumes:
+      - ./naiveproxy/client/config.json:/etc/naiveproxy/config.json:ro
+    links:
+      - naiveproxy-server:proxy.lab
+    environment:
+      - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+      - SSL_CERT_DIR=/etc/ssl/certs
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["while true; do naive --insecure /etc/naiveproxy/config.json; sleep 0.5; done"]
+    ports:
+      - "127.0.0.1:1081:1080/tcp"
+
+  xray-server:
+    image: ghcr.io/xtls/xray-core@sha256:9e479c59250703491b930da62dd6544bb5207b3372e1d8d6ba300b635b2e4990
+    container_name: xray-server
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    volumes:
+      - ./xray/server/config.json:/etc/xray/config.json:ro
+      - ./certs:/etc/xray/certs:ro
+    command: ["run", "-c", "/etc/xray/config.json"]
+
+  xray-client:
+    image: ghcr.io/xtls/xray-core@sha256:9e479c59250703491b930da62dd6544bb5207b3372e1d8d6ba300b635b2e4990
+    container_name: xray-client
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    depends_on:
+      - xray-server
+    volumes:
+      - ./xray/client/config.json:/etc/xray/config.json:ro
+      - ./certs:/etc/xray/certs:ro
+    ports:
+      - "127.0.0.1:1082:1082"
+      - "127.0.0.1:1083:1083"
+      - "127.0.0.1:1084:1084"
+      - "127.0.0.1:1085:1085"
+      - "127.0.0.1:1087:1087"
+    environment:
+      - XRAY_LOCATION_ASSET=/usr/share/xray/
+    command: ["run", "-c", "/etc/xray/config.json"]
+
+  xray-server-grpc:
+    image: ghcr.io/xtls/xray-core@sha256:9e479c59250703491b930da62dd6544bb5207b3372e1d8d6ba300b635b2e4990
+    container_name: xray-server-grpc
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    volumes:
+      - ./xray-grpc/server/config.json:/etc/xray/config.json:ro
+      - ./certs:/etc/xray/certs:ro
+    command: ["run", "-c", "/etc/xray/config.json"]
+    networks:
+      testnet:
+        ipv4_address: 172.28.0.31
+
+  xray-client-grpc:
+    image: teddysun/xray@sha256:7d7900e4e542a7de929e94bbf8af933ba5cd721e08fbf766e02e422dc403dd5b
+    container_name: xray-client-grpc
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    depends_on:
+      - xray-server-grpc
+    volumes:
+      - ./xray-grpc/client/config.json:/etc/xray/config.json:ro
+      - ./certs:/etc/xray/certs:ro
+    ports:
+      - "127.0.0.1:1086:1086"
+    environment:
+      - XRAY_LOCATION_ASSET=/usr/share/xray/
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["while true; do xray run -c /etc/xray/config.json; sleep 0.5; done"]
+    networks:
+      testnet:
+        ipv4_address: 172.28.0.30
+
+  webtunnel-bridge:
+    image: nginx@sha256:1d13701a5f9f3fb01aaa88cef2344d65b6b5bf6b7d9fa4cf0dca557a8d7702ba
+    container_name: webtunnel-nginx
+    networks:
+      testnet:
+        ipv4_address: 172.28.0.20
+    volumes:
+      - ./webtunnel/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs/server.crt:/etc/nginx/ssl/server.crt:ro
+      - ./certs/server.key:/etc/nginx/ssl/server.key:ro
+
+  webtunnel-server:
+    image: thetorproject/webtunnel-bridge@sha256:e234dc5d16c6e34f381d1fd7222b9a8beffa03df5939dfe351a0622670e791ef
+    container_name: webtunnel-server
+    user: debian-tor
+    environment:
+      - NICKNAME=mytestbedbridge
+      - PT_PORT=15000
+      - OR_PORT=9001
+      - EMAIL=admin@example.com
+      - WEBTUNNEL_URL=https://webtunnel-bridge/Sup3rS3cr3tPath
+    networks:
+      testnet:
+        ipv4_address: 172.28.0.21
+    volumes:
+      - webtunnel-bridge-data:/var/lib/tor
+
+  webtunnel-client:
+    build: ./webtunnel/client
+    container_name: webtunnel-client
+    depends_on:
+      - webtunnel-bridge
+      - webtunnel-server
+    networks:
+      - testnet
+    ports:
+      - "127.0.0.1:1090:9050"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["while true; do tor -f /etc/tor/torrc; sleep 0.5; done"]
+
+  gost-server:
+    image: gogost/gost@sha256:1ae76fcd556aec335ff602a1828c1140c27d6243c7f02a89f41e177baa265faf
+    container_name: gost-server
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    volumes:
+      - ./gost/server/config.yaml:/etc/gost/config.yaml:ro
+    command: ["-C", "/etc/gost/config.yaml"]
+    networks:
+      - testnet
+
+  gost-client:
+    image: gogost/gost@sha256:1ae76fcd556aec335ff602a1828c1140c27d6243c7f02a89f41e177baa265faf
+    container_name: gost-client
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    depends_on:
+      - gost-server
+    volumes:
+      - ./gost/client/config.yaml:/etc/gost/config.yaml:ro
+    command: ["-C", "/etc/gost/config.yaml"]
+    networks:
+      - testnet
+    ports:
+      - "127.0.0.1:1088:1088/tcp"
+
+volumes:
+  webtunnel-bridge-data:
+
+networks:
+  testnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

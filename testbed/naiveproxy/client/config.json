@@ -1,0 +1,8 @@
+{
+  "listen": "socks://0.0.0.0:1080",
+  "proxy": "https://user:test@proxy.lab:443",
+  "padding": true,
+  "host": "proxy.lab",
+  "log": "",
+  "ssl_insecure": true
+}

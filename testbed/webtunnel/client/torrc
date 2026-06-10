@@ -1,0 +1,11 @@
+SocksPort 0.0.0.0:9050
+Log notice stdout
+DataDirectory /var/lib/tor
+
+UseBridges 1
+ClientTransportPlugin webtunnel exec /usr/bin/webtunnel-client
+
+Bridge webtunnel 172.28.0.20:443 CE0306AB7F7A38E8BA0F9EA7B7DDA68352616347 url=https://webtunnel-bridge/Sup3rS3cr3tPath
+
+LearnCircuitBuildTimeout 0
+CircuitBuildTimeout 60
