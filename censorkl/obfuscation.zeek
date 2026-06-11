@@ -60,7 +60,6 @@ event zeek_init() {
         Log::disable_stream(Files::LOG);
         Log::disable_stream(OCSP::LOG);
         Log::disable_stream(PacketFilter::LOG);
-        Log::disable_stream(Reporter::LOG);
         Log::disable_stream(Weird::LOG);
         Log::disable_stream(Notice::LOG);
         
