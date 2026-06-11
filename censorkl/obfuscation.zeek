@@ -14,7 +14,6 @@ export {
                 timestamp:      time;
                 direction:      count;
                 size:           count;
-                entropy:        double;
         } &log;
 
         type Info: record {
@@ -39,25 +38,6 @@ export {
 
         option packets_to_observe = 50;
         option allow_shorter_flows = T;
-
-        global popcount_lookup: vector of count = vector(
-                0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
-                1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
-                1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
-                2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-                1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
-                2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-                2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-                3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-                1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
-                2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-                2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-                3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-                2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-                3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-                3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-                4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8
-        );
 
         global next_seq: table[string, bool] of count;
         global errors: table[string] of count &default_insert=0;
@@ -107,20 +87,13 @@ function discard_flow(c: connection, reason: string) {
         print c$id, reason;
 }
 
-function average_popcount_per_byte(payload: string) : double {
-        local popcount : count = 0;
-        for (byte in payload) popcount += popcount_lookup[bytestring_to_count(byte)];
-        return count_to_double(popcount) / |payload|;
-}
-
 function extract_packet_features(c: connection, is_orig: bool, payload: string) {
         local packet : Packet = Packet(
                 $conn_id = c$uid,
                 $idx = |c$tlsfingerprint$packets|,
                 $timestamp = network_time(),
                 $direction = |is_orig|,
-                $size = |payload|,
-                $entropy = average_popcount_per_byte(payload)
+                $size = |payload|
         );
 
         # If the first data packet is not client-to-server, we can stop monitoring.
