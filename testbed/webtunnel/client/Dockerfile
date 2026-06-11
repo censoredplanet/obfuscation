@@ -3,6 +3,8 @@ RUN git clone https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transp
 ENV CGO_ENABLED=0
 WORKDIR /webtunnel
 
+RUN git checkout ae3b5b580a976194f905e8ec93c6986f8749f9b8
+
 RUN sed -i 's/ || ip.IsPrivate()//g' main/client/main.go
 RUN go build -ldflags="-s -w" -o "build/client" gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/webtunnel/main/client
 
