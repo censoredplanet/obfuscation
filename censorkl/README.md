@@ -18,6 +18,51 @@ Zeek logs → zeek2flows → binary flows file
 
 ---
 
+## Helper scripts
+
+The `scripts/` directory contains batch wrappers around the `obfs` commands. They assume the `obfs` binary is installed or otherwise available on `PATH`.
+
+### `scripts/zeek2flows.sh`
+
+Recursively scans a data directory for leaf directories that contain exactly one `obfuscation*.log*` file and exactly one `packets*.log*` file. For each matching directory, it runs `obfs zeek2flows` and writes `flows.bin` next to the Zeek logs.
+
+```
+scripts/zeek2flows.sh <data_directory>
+```
+
+Use this after running Zeek over many captures when each capture directory contains the matching flow metadata log and packet log.
+
+### `scripts/stats.sh`
+
+Builds model assumptions from a tree of `flows*.bin*` files. It computes per-shard `TrafficStats` files in parallel, merges them, and then runs `obfs stats bin` to produce the `ModelAssumptions` JSON used by histogram building, generation, and CSV export.
+
+```
+scripts/stats.sh \
+  --data <directory> \
+  --markov-order <order> \
+  --stats-out <stats.bin> \
+  --assumptions-out <model.json> \
+  [--epsilon <value>] \
+  [--delta <value>]
+```
+
+The script always passes `--strip-tls-handshake` to `stats compute`, so the resulting quantizer is fit on post-handshake traffic.
+
+### `scripts/build-model.sh`
+
+Builds a TrafficProfile from a tree of `flows*.bin*` files. It runs `obfs pipeline histograms` on each flows file in parallel using a shared pipeline config, then merges the partial histograms into one `hist.bin` under a UUID-named output directory.
+
+```
+scripts/build-model.sh \
+  --data <directory> \
+  --config <config.toml> \
+  -o <output_root>
+```
+
+The command-line `--flows` value passed by the script overrides the flow path in the config for each shard. The script records the original command line in `cmdline.txt` inside the output directory.
+
+---
+
 ## Stage 1: Parse Log Files
 
 ### `zeek2flows`
@@ -119,8 +164,11 @@ The quantizer JSON produced by `stats bin` looks like this (one entry per packet
           "feature": { "feature": "Size", "effective_min": 1.0, "effective_max": 1461.0 },
           "quantization": {
             "Empirical": {
-              "lookup": [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-              "num_bins": 16
+              "lookup": [0, 0, 1, 1, 2, 3],
+              "bins": [
+                { "values": [1, 2], "counts": [125, 40] },
+                { "values": [3, 4], "counts": [12, 18] }
+              ]
             }
           }
         }
@@ -137,7 +185,7 @@ Key fields:
 - **`quantization`** per feature can be:
   - `"Mask"` — feature is excluded from the model entirely
   - `"Identity"` — feature values are used as-is as bin indices (for naturally discrete features like direction: 0 or 1)
-  - `{ "Empirical": { "lookup": [...], "num_bins": N } }` — t-digest-derived mapping: the lookup table converts a raw value's rank to a bin index
+  - `{ "Empirical": { "lookup": [...], "bins": [...] } }` — empirical mapping for discrete features such as size. The lookup table maps raw values to bin indices, and each bin stores the observed values and counts used when sampling synthetic packets.
 
 ---
 
@@ -162,12 +210,9 @@ obfs pipeline histograms --config <path> --output <path> [--flows <path>]
 [flow]
 strip_tls_handshake = true   # whether to exclude handshake packets
 
-[flow.source_a]
-# Option 1: load from a flows file
-Empirical = { path = "path/to/flows", flow_filter = "tlsDataPackets >= 10" }
-
-# Option 2: generate synthetic flows from an existing model
-Generated = { traffic_profile = "model.bin", quantizer = "model.json", num_flows = 10000, flow_length = 20 }
+[flow.source_a.Empirical]
+path = "path/to/flows"
+flow_filter = "tlsDataPackets >= 10"
 
 [model]
 model_assumptions = "model.json"   # path to the quantizer produced by stats bin
@@ -273,6 +318,8 @@ obfs dump-csv --flows <path>... -N <n> --output <path> [options]
 | `--skip-timing` | | false | Omit timestamp columns (emit only size and direction) |
 | `--quantized` | | false | Emit bin indices instead of raw feature values |
 | `--include-rtt` | | false | Prepend the flow's round-trip time (seconds) as the first column and emit timing columns as raw IAT seconds; without this flag timing columns are RTT-normalized |
+| `--sample-rate` | | `1.0` | Fraction of matching flows to sample from each input file |
+| `--seed` | | | Fix the random seed for reproducible file shuffling and sampling |
 
 ### `generate`
 Samples synthetic flows from a saved TrafficProfile by sampling through the Markov chain. Outputs a CSV of per-packet features.

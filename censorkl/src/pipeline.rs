@@ -6,9 +6,9 @@ use rayon::prelude::*;
 
 use crate::base::Flow;
 use crate::cli::{CommonPipelineArgs, PipelineHistogramsArgs};
-use crate::merge::{Merge, PostcardIO};
-use crate::quantization::{FlowQuantizer, as_histogram};
 use crate::divergence::TrafficProfile;
+use crate::merge::{Merge, PostcardIO};
+use crate::quantization::{as_histogram, FlowQuantizer};
 use crate::ModelAssumptions;
 
 pub fn read_and_filter_flows(source: &crate::cli::FlowSource) -> Result<Vec<Flow>, Box<dyn Error>> {
@@ -19,32 +19,7 @@ pub fn read_and_filter_flows(source: &crate::cli::FlowSource) -> Result<Vec<Flow
                 .filter(|flow| flow_filter.matches(flow))
                 .collect::<Vec<Flow>>())
         }
-        crate::cli::FlowSource::Generated {
-            traffic_profile: _,
-            quantizer: _,
-            num_flows: _,
-            flow_length: _,
-        } => todo!(),
-        crate::cli::FlowSource::Clone { .. } => unreachable!(),
     }
-}
-
-pub fn materialize_sources(
-    source_a: &crate::cli::FlowSource,
-    source_b: Option<&crate::cli::FlowSource>,
-) -> Result<(Vec<Flow>, Option<Vec<Flow>>), Box<dyn std::error::Error>> {
-    if matches!(source_a, crate::cli::FlowSource::Clone { .. }) {
-        return Err("source_a cannot be Clone".into());
-    }
-
-    let flows_a = read_and_filter_flows(source_a)?;
-    let flows_b = match source_b {
-        None => None,
-        Some(crate::cli::FlowSource::Clone { .. }) => Some(flows_a.clone()),
-        Some(source) => Some(read_and_filter_flows(source)?),
-    };
-
-    Ok((flows_a, flows_b))
 }
 
 pub fn preprocess(flows: &mut [Flow], strip: bool) -> () {
@@ -56,8 +31,10 @@ pub fn preprocess(flows: &mut [Flow], strip: bool) -> () {
     });
 }
 
-pub fn prepare_flows(config: &crate::cli::PipelineConfig) -> Result<Vec<Flow>, Box<dyn std::error::Error>> {
-    let (mut flows, _) = materialize_sources(&config.flow.source_a, None)?;
+pub fn prepare_flows(
+    config: &crate::cli::PipelineConfig,
+) -> Result<Vec<Flow>, Box<dyn std::error::Error>> {
+    let mut flows = read_and_filter_flows(&config.flow.source_a)?;
     preprocess(&mut flows, config.flow.strip_tls_handshake);
     Ok(flows)
 }

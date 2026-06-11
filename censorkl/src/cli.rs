@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
-use winnow::Parser as WinnowParser;
 use winnow::ascii::{digit1, space0};
 use winnow::combinator::{alt, opt, seq};
 use winnow::token::literal;
+use winnow::Parser as WinnowParser;
 
 use crate::base::{FlowFilterPredicate, TLSVersion};
 use crate::feature::FeatureKind;
@@ -124,15 +124,6 @@ pub enum FlowSource {
         path: Option<PathBuf>,
         flow_filter: FlowFilterPredicate,
     },
-    Generated {
-        traffic_profile: PathBuf,
-        quantizer: PathBuf,
-        num_flows: usize,
-        flow_length: usize,
-    },
-    Clone {
-        source: String,
-    },
 }
 
 fn default_pseudocount() -> f64 {
@@ -157,7 +148,6 @@ pub struct FlowConfig {
     pub source_a: FlowSource,
     pub strip_tls_handshake: bool,
 }
-
 
 #[derive(Debug, Parser)]
 pub struct PipelineCli {
@@ -188,7 +178,6 @@ pub struct PipelineHistogramsArgs {
     #[arg(long)]
     pub output: PathBuf,
 }
-
 
 #[derive(Debug, Args)]
 pub struct GenerateArgs {
@@ -440,18 +429,17 @@ fn tls_version_comp(input: &mut &str) -> winnow::Result<FlowFilterPredicate> {
 
 // Allow the --flows command line option to override whatever is in config
 pub fn resolve(config: &mut PipelineConfig, args: &CommonPipelineArgs) {
-    if let FlowSource::Empirical {
+    let FlowSource::Empirical {
         path,
         flow_filter: _,
-    } = &mut config.flow.source_a
-    {
-        let new_path = args
-            .flows
-            .as_ref()
-            .cloned()
-            .or(path.take())
-            .expect("Need to specify --flows on command line or [flows] in config file");
+    } = &mut config.flow.source_a;
 
-        *path = Some(new_path);
-    }
+    let new_path = args
+        .flows
+        .as_ref()
+        .cloned()
+        .or(path.take())
+        .expect("Need to specify --flows on command line or [flows] in config file");
+
+    *path = Some(new_path);
 }
