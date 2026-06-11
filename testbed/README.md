@@ -53,7 +53,7 @@ Bridge webtunnel 172.28.0.20:443 <FINGERPRINT> url=https://webtunnel-bridge/Sup3
 Then restart the client container to pick up the change:
 
 ```bash
-docker compose -f testbed.yaml restart webtunnel-client
+docker compose -f testbed.yaml up -d --build webtunnel-client
 ```
 
 ### 4. Install Playwright dependencies

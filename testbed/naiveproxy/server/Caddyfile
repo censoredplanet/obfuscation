@@ -5,11 +5,6 @@
 proxy.lab:443 {
   tls /etc/naiveproxy/server.crt /etc/naiveproxy/server.key 
 
-  # Intercept WebTunnel traffic and send to the container IP
-  handle /Sup3rS3cr3tPath {
-    reverse_proxy 172.28.0.40:15000
-  }
-
   forward_proxy {
     basic_auth user test
     hide_ip

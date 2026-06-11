@@ -15,8 +15,13 @@ DOMAIN="proxy.lab"
 VALIDITY_DAYS=825
 CERT_DIR="certs"
 
-DIST_SRC="./lab.dist"
-DIST_DST="/usr/lib/tc/lab.dist"
+DIST_SRC="./worker/lab.dist"
+if [[ -d "/usr/lib/x86_64-linux-gnu/tc" ]]; then
+  DIST_DST="/usr/lib/x86_64-linux-gnu/tc/lab.dist"
+else
+  DIST_DST="/usr/lib/tc/lab.dist"
+  sudo mkdir -p /usr/lib/tc
+fi
 
 mkdir -p "$CERT_DIR"
 echo "[*] Output directory: ./$CERT_DIR/"
@@ -47,6 +52,7 @@ keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
 subjectAltName = @alt_names
 [alt_names]
 DNS.1 = $DOMAIN
+DNS.2 = webtunnel-bridge
 EOF
 
 echo "[*] Signing server certificate (SAN: $DOMAIN)..."
@@ -59,6 +65,10 @@ openssl x509 -req \
   -days "$VALIDITY_DAYS" \
   -sha256 \
   -extfile "$CERT_DIR/server.ext"
+
+echo "[*] Setting certificate permissions..."
+chmod 644 "$CERT_DIR/server.crt"
+chmod 644 "$CERT_DIR/server.key"
 
 echo "[*] Cleaning up intermediate files..."
 rm "$CERT_DIR/server.csr" "$CERT_DIR/server.ext" "$CERT_DIR/rootCA.srl" "$CERT_DIR/rootCA.key"
