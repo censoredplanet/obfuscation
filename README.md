@@ -7,7 +7,7 @@ The intended workflow is:
 1. Use the testbed to run proxy clients and servers, browse a domain list, and capture packet traces.
 2. Convert the captured traffic into Zeek logs and then into CensorKL flow files.
 3. Use CensorKL to build traffic models, compare models with KL divergence, inspect distributions, or generate synthetic flows.
-4. Use the published models as reference artifacts when you do not need to regenerate models from raw traffic.
+4. Use the published models as baseline TLS model for calculating divergence.
 
 ## Repository layout
 
