@@ -1,0 +1,1447 @@
+{
+  "markov_order": 1,
+  "quantizer": {
+    "PerPacket": [
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 0.0
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 0.0
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 132.9766125688925
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 169.26432440858775
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 12266.950563562614
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 77.53794304343062
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 11121.225970925017
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 67.40583587857036
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 6404.010996444789
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 61.72391636850723
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 6522.720513311771
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 53.16968684050588
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 8502.563489800465
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 46.30734515640702
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 6643.315040179987
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 42.49267538855499
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 8342.13815725535
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 37.21262095607566
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 7319.986141588256
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 34.500195434573676
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 6744.0627652597
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 31.871819213959295
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 6893.113334106525
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 29.417011893933683
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 5570.0669246771295
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 28.05685894471782
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 3493.916804196233
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 27.821815878305916
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 3359.6614805231807
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 26.355026758494837
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 2552.0575489478338
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 25.87619947581408
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 2426.802577085033
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 24.760281227054055
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 2505.9622773347537
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 23.38112223573887
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 2237.733581547175
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 22.687008826981316
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 1988.0994704655247
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 22.11854217633953
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 2279.769634016826
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 20.56317698747977
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 1905.7486083546573
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 20.25643650035429
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 1496.0704217826137
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 20.379509063557407
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 2363.2566729138643
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 18.537067628769577
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 1151.4019832709482
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 19.859272304823588
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 892.5851203391019
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 20.01400510543301
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 655.7979241342564
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 20.501353991123796
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 405.7323717910059
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 21.470816129601868
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 449.6389298818049
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 20.619682263990967
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 380.52512504185097
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 20.860752650823805
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 250.15781446036684
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 21.7152063968288
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 237.89639352119568
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 21.36584366716086
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 182.30701949354952
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 22.06801287055891
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 103.4470547135262
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 24.092859268400275
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 134.55620088766466
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 22.202367642807587
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 105.6927921256613
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 22.912433203632517
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 159.46441007288283
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 20.480213049117197
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 138.40694182367722
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 20.658657569262672
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 124.42827236441968
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 20.696503316049927
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 81.04378351497229
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 22.23607287501394
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 91.20657244938991
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 20.99897001882912
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 23.025733272736208
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 28.62422408225805
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 36.92569679855783
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 23.65477951948643
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 18.147140469063036
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 27.098862984412868
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 6.722682666138339
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 32.77627046124327
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 18.186223967025374
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 15.571090811403604
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 30.775388789235553
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 9.830305642126332
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      },
+      {
+        "timestamp": {
+          "feature": {
+            "feature": "Timestamp",
+            "effective_min": 0.0,
+            "effective_max": 2.1469645353075495
+          },
+          "quantization": {
+            "LogUniform": {
+              "inv_log_width": 2.616800112734781
+            }
+          }
+        },
+        "direction": {
+          "feature": {
+            "feature": "Direction",
+            "effective_min": 0.0,
+            "effective_max": 2.0
+          },
+          "quantization": "Mask"
+        },
+        "size": {
+          "feature": {
+            "feature": "Size",
+            "effective_min": 1.0,
+            "effective_max": 1461.0
+          },
+          "quantization": "Mask"
+        }
+      }
+    ]
+  }
+}
