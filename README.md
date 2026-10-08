@@ -9,13 +9,13 @@ The intended workflow is:
 3. Use CenKL to build traffic models, compare models with KL divergence, inspect distributions, or generate synthetic flows.
 4. Use the published models as baseline TLS model for calculating divergence.
 
-The `CenKL/` and `testbed/` directories have their own READMEs with setup and usage details.
+The `cenkl/` and `testbed/` directories have their own READMEs with setup and usage details.
 
 ## CenKL
 
-[`CenKL/`](CenKL/) contains the CenKL command-line tool. It parses Zeek logs, extracts per-packet flow features, builds statistical traffic models, computes KL divergence between models, and generates synthetic flows.
+[`cenkl/`](cenkl/) contains the CenKL command-line tool. It parses Zeek logs, extracts per-packet flow features, builds statistical traffic models, computes KL divergence between models, and generates synthetic flows.
 
-See [`CenKL/README.md`](CenKL/README.md) for build instructions, command usage, model formats, and the end-to-end analysis workflow.
+See [`cenkl/README.md`](cenkl/README.md) for build instructions, command usage, model formats, and the end-to-end analysis workflow.
 
 ## Models
 
@@ -31,7 +31,3 @@ Each model directory contains:
 [`testbed/`](testbed/) contains the Docker-based proxy testbed used to generate traffic captures. It includes client-server configurations for several proxy protocols, certificate setup, delay injection, packet capture scripts, and Playwright-based browsing harnesses.
 
 See [`testbed/README.md`](testbed/README.md) for setup, protocol details, and experiment commands.
-
-## Where to start
-
-Start with [`models/`](models/) if you want to use the published artifacts directly. Start with [`CenKL/`](CenKL/) if you already have Zeek logs or flow files and want to build, inspect, compare, or sample from traffic models. Start with [`testbed/`](testbed/) if you need to produce new proxy traffic captures.
