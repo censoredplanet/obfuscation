@@ -1,6 +1,6 @@
 # CenKL
 
-`CenKL` is a command-line tool for analysing and modelling network traffic. It ingests raw Zeek logs, extracts per-packet features, builds statistical traffic models, and can generate synthetic flows that mimic real traffic patterns.
+`CenKL` is a diagnostic tool for analysing and modelling network traffic. It ingests raw Zeek logs, extracts per-packet features, builds statistical traffic models, and can generate synthetic flows that mimic real traffic patterns.
 
 ## Typical workflow
 
